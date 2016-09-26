@@ -1,0 +1,45 @@
+Taken from http://code.dogmap.org/qmail:
+
+The qmail-realrcptto patch copies logic from qmail-send, qmail-lspawn,
+qmail-getpw, and qmail-local into qmail-smtpd and qmail-qmtpd, so that
+if a local delivery (i.e., one for a domain in /var/qmail/control/locals
+or virtualdomains) would eventually bounce due to a missing .qmail file,
+then that recipient address is rejected during the SMTP or QMTP protocol
+conversation. (This means that addresses which use the default delivery
+instructions are never rejected by this patch, because they would never
+be bounced due to the lack of a .qmail file.) This makes less work for
+the qmail machine, since these undeliverable addresses are rejected
+before ever entering the qmail queue (but it makes more work - to
+perform the check itself - in cases that would not bounce). This also
+eliminates joe-job double bounces. Note that with this patch,
+qmail-smtpd and qmail-qmtpd will always use the latest versions of the
+control files envnoathost, locals, percenthack, and virtualdomains,
+while qmail-send will use its cached copy in memory until it receives
+SIGHUP or is restarted. (Even after SIGHUP, qmail-send still uses the
+old envnoathost and percenthack.) So after control files are changed,
+and before qmail-send is notified, it is possible that a message
+recipient might be accepted through the network even though it would
+bounce later, or a message recipient might be rejected through the
+network even though the delivery would succeed. There are other qmail
+patches around that do similar jobs (badrcptto, etc.); the focus of this
+patch is to get this functionality with no additional administrative
+effort, rather than qmail-smtpd's running speed. You just set up your
+.qmail files, as you would have to do anyway, and the rest is automatic,
+though slower than a CDB lookup.
+
+If QMAILRRTDENYALL=1 is set in the environment for qmail-smptd and
+qmail-qmtpd, then each individual recipient address will be accepted,
+but the whole message will be rejected, to stop attackers from probing
+for valid addresses. It's still possible to probe by sending empty,
+single-recipient messages, and then sending the real message with all
+the recipients that weren't rejected.
+
+This patch is less effective when there are .qmail-default files, or
+when qmaild does not have sufficient filesystem permissions to stat()
+users' .qmail files, since in those cases, qmail-smtpd cannot know that
+the delivery would later bounce due to the lack of a .qmail file. For
+example, I'm told that this patch is not useful for virtual domains
+managed with vpopmail, since an applicable .qmail-default file always
+exists. (I'm not familiar with vpopmail myself.) The patch may still be
+useful for other local or virtual domains on the same server, if they
+are not managed by vpopmail. 

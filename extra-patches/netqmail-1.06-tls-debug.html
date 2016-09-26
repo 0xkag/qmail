@@ -1,0 +1,48 @@
+<html>
+<head>
+<basefont face="Arial">
+<title>Qmail-TLS debugging tips</title>
+</head>
+<body bgcolor="#ffffff">
+<center><h1>Qmail-TLS debugging tips</h1></center>
+<p>
+A few "trivial" things to try when you do not succeed in adding
+TLS support to your qmail.
+
+<H1>qmail-smtpd</H1>
+
+<ul>
+<li> Execute the newly compiled qmail-smtpd binary at command-line.
+<code>./qmail-smtpd</code> and issue <code>EHLO</code>. This
+should show STARTTLS, otherwise the patch was not compiled in.
+<li> <code>telnet localhost 25</code>. Issue <code>EHLO</code>.
+This should again show STARTTLS. Issue STARTTLS. The
+server should return <code>220 ready for tls</code>.
+<li> Run <code>openssl s_client -starttls smtp -crlf -connect localhost:25
+</code>. There you should have a "normal" SMTP session.
+<li> You can also give s_client a client cert. This way you can debug
+the cert-based relaying.
+<!-- openssl s_client -starttls smtp -crlf -connect ns.nettotime.com:2525 -cert ~/priv/fv.pem -CAfile ~/priv/00.pem -debug -key ~/priv/fv.pem -->
+</ul>
+
+<H1>qmail-remote</H1>
+<ul>
+<li> <code>ldd /var/qmail/bin/qmail-remote</code> will show whether your
+qmail-remote was linked to libssl and libcrypto.
+<li> <code>/var/qmail/bin/qmail-remote host sender recipient</code>.
+As host, use a host you know implements STARTTLS.
+(when in doubt, use s_client to check the remote
+host, as described above).
+</ul>
+</ul>
+
+
+
+</ul> 
+
+<hr>
+This page is maintained by <a href="mailto:qmail-tls akrul inoa.net">Frederik Vermeulen.</a>
+</body>
+</html>
+
+

@@ -1,0 +1,93 @@
+2016-09-18
+  * bug: qmail-remote accepting any dNSName, without checking that is matches (E. Surovegin) 
+  * bug: documentation regarding RSA and DH keys (K. Peter, G. A. Bofill)
+
+2015-12-15
+  * typo in #if OPENSSL_VERSION_NUMBER for 2015-12-08 patch release (V. Smith)
+
+2015-12-08
+  * add ECDH to qmail-smtpd 
+  * increase size of RSA and DH pregenerated keys to 2048 bits
+  * qmail-smtpd sets RELAYCLIENT if relaying allowed by cert
+
+2014-12-16
+  * don't check for commonName if SubjectAltName of type DNS present (Rolf Eike Beer)
+  * disallow TLSv3 in client and server after POODLE bug
+
+2011-01-19
+  * flush_io after starttls, bug described in http://www.kb.cert.org/vuls/id/555316 (Wietse Venema)
+
+2007-04-08
+  * type correction of time argument in ssl_timeoutio functions
+  * bug in tlsserversciphers processing (Michael Hanselmann)
+  * RFC1891 (James Couzens) 
+
+2006-01-04
+  * strerror declaration in tls.c compile problem (Renato Botelho, Bill Shupp)
+  * chown uid.gid deprecated, should be uid:gid (Bill Shupp)
+
+2005-03-29
+  * no STARTTLS advertised when control/servercert.pem absent (Jason Haar)
+  * control/notlshosts (Albert Weichselbraun)
+  * control/tlshosts/exhaustivelist
+  * scripts honor conf-users (Sven Verdoolaege)
+
+2004-04-17
+  * bug: qmail-remote loops on malformed server response (B. Shupp, A. Meltzer)
+
+2004-01-20
+  * bug: DH caused exit if dh512.pem and dh1024.pem absent (Samuli Karkkainen)
+
+2003-12-27
+  * script for update temporary RSA/DH temp keys
+  * CRL checking of clients
+  * Diffie-Hellman parameters added 
+  * RFC 2821 compliance of headers (Matthias Wimmer)
+  * bug: sk_GENERAL_NAME_pop_free call (Joe Orton)
+
+2002-12-28
+  * MXPS patch compatibility (Albert Meltzer)
+  * new implementation IO functions (Albert Meltzer)
+  * bug report: hanging connections (Tim Helton)
+  * improved error reporting (Albert Meltzer)
+  * RFC2595 compliant server identity check (Albert Meltzer)
+
+2002-08-25
+  * new implementation IO with non-blocking IO and timeouts (Albert Meltzer)
+  * smtps support (Albert Meltzer)
+  * AUTH and QMTP patch compatibility (Albert Meltzer)
+  * man page patches (Albert Meltzer)
+  * general code cleanup (Albert Meltzer)
+
+2002-05-06
+  * compatibility with openssl 0.9.6c
+
+2001-06-27
+  * separate files for servercert and clientcert
+  * cipher selection (Jean-Philippe Donnio)
+ 
+2001-01-06
+  * fix ssl_timeoutread/write
+  * compliance with openssl 0.9.6
+  * read cert chain from cert.pem
+
+2000-08-30
+  * bug report: crash when sending to IP address (Andy Dustman)
+
+2000-01-13
+  * client authentication (as basis for relaying)
+
+1999-12-24
+  * server authentication
+
+1999-08-31
+  * temp RSA key stored in file (Bodo Moeller)
+  * options to be compliant with broken servers
+  * patch against qmail-1.03  (was qmail-1.01)
+  * debug information (Jean-Philippe Donnio)
+
+1999-04-12
+  * patch against openssl (was ssleay)
+
+1999-03-19
+  * first released version
