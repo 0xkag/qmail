@@ -47,6 +47,8 @@ void die_alarm() { out("451 timeout (#4.4.2)\r\n"); flush(); _exit(1); }
 void die_nomem() { out("421 out of memory (#4.3.0)\r\n"); flush(); _exit(1); }
 void die_control() { out("421 unable to read controls (#4.3.0)\r\n"); flush(); _exit(1); }
 void die_ipme() { out("421 unable to figure out my IP addresses (#4.3.0)\r\n"); flush(); _exit(1); }
+void die_cdb() { out("421 unable to read cdb user database (#4.3.0)\r\n"); flush(); _exit(1); }
+void die_sys() { out("421 unable to read system user database (#4.3.0)\r\n"); flush(); _exit(1); }
 void straynewline() { out("451 See http://pobox.com/~djb/docs/smtplf.html.\r\n"); flush(); _exit(1); }
 
 void err_bmf() { out("553 sorry, your envelope sender is in my badmailfrom list (#5.7.1)\r\n"); }
@@ -59,6 +61,10 @@ void err_noop(arg) char *arg; { out("250 ok\r\n"); }
 void err_vrfy(arg) char *arg; { out("252 send some mail, i'll try my best\r\n"); }
 void err_qqt() { out("451 qqt failure (#4.3.0)\r\n"); }
 
+extern void realrcptto_init();
+extern void realrcptto_start();
+extern int realrcptto();
+extern int realrcptto_deny();
 
 stralloc greeting = {0};
 
@@ -116,6 +122,8 @@ void setup()
   if (bmfok == -1) die_control();
   if (bmfok)
     if (!constmap_init(&mapbmf,bmf.s,bmf.len,0)) die_nomem();
+
+  realrcptto_init();
  
   if (control_readint(&databytes,"control/databytes") == -1) die_control();
   x = env_get("DATABYTES");
@@ -245,6 +253,7 @@ void smtp_mail(arg) char *arg;
   if (!stralloc_copys(&rcptto,"")) die_nomem();
   if (!stralloc_copys(&mailfrom,addr.s)) die_nomem();
   if (!stralloc_0(&mailfrom)) die_nomem();
+  realrcptto_start();
   out("250 ok\r\n");
 }
 void smtp_rcpt(arg) char *arg; {
@@ -258,6 +267,10 @@ void smtp_rcpt(arg) char *arg; {
   }
   else
     if (!addrallowed()) { err_nogateway(); return; }
+  if (!realrcptto(addr.s)) {
+    out("550 sorry, no mailbox here by that name. (#5.1.1)\r\n");
+    return;
+  }
   if (!stralloc_cats(&rcptto,"T")) die_nomem();
   if (!stralloc_cats(&rcptto,addr.s)) die_nomem();
   if (!stralloc_0(&rcptto)) die_nomem();
@@ -372,6 +385,7 @@ void smtp_data(arg) char *arg; {
  
   if (!seenmail) { err_wantmail(); return; }
   if (!rcptto.len) { err_wantrcpt(); return; }
+  if (realrcptto_deny()) { out("554 sorry, no mailbox here by that name. (#5.1.1)\r\n"); return; }
   seenmail = 0;
   if (databytes) bytestooverflow = databytes + 1;
   if (qmail_open(&qqt) == -1) { err_qqt(); return; }

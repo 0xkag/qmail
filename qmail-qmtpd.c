@@ -14,6 +14,15 @@
 
 void badproto() { _exit(100); }
 void resources() { _exit(111); }
+void die_nomem() { resources(); }
+void die_control() { resources(); }
+void die_cdb() { resources(); }
+void die_sys() { resources(); }
+
+extern void realrcptto_init();
+extern void realrcptto_start();
+extern int realrcptto();
+extern int realrcptto_deny();
 
 int safewrite(fd,buf,len) int fd; char *buf; int len;
 {
@@ -98,6 +107,8 @@ main()
   if (rcpthosts_init() == -1) resources();
   relayclient = env_get("RELAYCLIENT");
   relayclientlen = relayclient ? str_len(relayclient) : 0;
+
+  realrcptto_init();
  
   if (control_readint(&databytes,"control/databytes") == -1) resources();
   x = env_get("DATABYTES");
@@ -114,6 +125,7 @@ main()
   if (!local) local = "unknown";
  
   for (;;) {
+    realrcptto_start();
     if (!stralloc_copys(&failure,"")) resources();
     flagsenderok = 1;
  
@@ -216,6 +228,10 @@ main()
             case -1: resources();
             case 0: failure.s[failure.len - 1] = 'D';
           }
+
+        if (!failure.s[failure.len - 1])
+          if (!realrcptto(buf))
+            failure.s[failure.len - 1] = 'D';
  
         if (!failure.s[failure.len - 1]) {
           qmail_to(&qq,buf);
@@ -231,6 +247,7 @@ main()
     result = qmail_close(&qq);
     if (!flagsenderok) result = "Dunacceptable sender (#5.1.7)";
     if (databytes) if (!bytestooverflow) result = "Dsorry, that message size exceeds my databytes limit (#5.3.4)";
+    if (realrcptto_deny()) result = "Dsorry, no mailbox here by that name. (#5.1.1)\r\n";
  
     if (*result)
       len = str_len(result);
