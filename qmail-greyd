@@ -1,0 +1,165 @@
+#!/usr/bin/python
+
+# Before running this script make sure to have done :
+# mkdir /var/qmail/grey
+# chown qmaild.nofiles /var/qmail/grey
+# test with env TCPREMOTEIP="127.0.0.1" GREY="" ./greyd /bin/bash -c env | grep RB
+# and do not forget to delete the folder and file created before going in production
+# Design similar to http://www.jonatkins.com/page/software/qgreylist
+
+import os
+import sys
+import time
+
+minute = 60
+hour = 60*60
+day = 60*60*24
+
+# Configuration start
+
+config = {}
+config['WAITING'] = 1*minute		# How long should a sender wait before being allowed
+config['LAST_SEEN'] = 32*day		# How long before we clean IP which have sent several time
+config['FIRST_SEEN'] = 5*day		# How long before we clean IP which have seen one time only
+config['CLEANUP'] = 20*minute		# How often we cleanup the IPS
+config['BASE'] = os.path.join('/','var','qmail','grey')
+
+log_per_ip = True			# Log per IP (true) or per Class C (false)
+
+# Configuration end
+
+def log (*param):
+	sys.stderr.write('greyd: ')
+	sys.stderr.write(*param)
+	sys.stderr.write('\n')
+	sys.stderr.flush()
+
+def out (code,*param):
+	log(*param)
+	sys.exit(code)
+
+def run_next ():
+	if len(sys.argv) > 1:
+		try:
+			prog = sys.argv[1]
+			param = sys.argv[1:]
+			os.execve(prog,param,os.environ)
+		except:
+			out(1,"issue whish trying to exec %s" % prog)
+	else:
+		out(1,"can not execute the smtp application")
+
+def cleanup ():
+	global config
+	
+	try:
+		filename = os.path.join(config['BASE'],'clean')
+		last_clean = os.path.getmtime(filename)
+	except:
+		try:
+			open(filename,'w').close()
+		except:
+			log('can not create the timestamp file (%s) used for cleanup' % filename)
+		return
+
+	try:
+		now = time.time()
+		if now - last_clean > config['CLEANUP']:
+			log('running cleanup')
+			open(filename,'w').close()
+			for root, dirs, files in os.walk(config['BASE'], topdown=False):
+				if not dirs:
+					for file in  files:
+						filename = os.path.join(root,file)
+						#log('checking %s' % filename)
+						try:
+							ctime = os.path.getctime(filename)
+							mtime = os.path.getmtime(filename)
+
+							deltac = now - ctime
+							deltam = now - mtime
+						except:
+							log('%s must have been deleted by another process' % filename)
+							continue
+						try:
+							# You sent us one mail 5 days ago, bye, bye
+							if ctime == mtime :
+								if deltac > config['FIRST_SEEN']:
+									os.unlink(filename)
+									log('removed inactive one off sender %s' % filename)
+							# You sent us several mails 32 days ago, bye, bye
+							else:
+								if deltam > config['LAST_SEEN']:
+									os.unlink(filename)
+									log('removed inactive sender %s' % filename)
+						except:
+							log('could not cleanup %s' % filename)
+							continue
+	except:
+		log('problem with cleanup')
+
+# Main
+
+# Get all environment variable
+
+remote_ip = os.environ.get('TCPREMOTEIP')
+if remote_ip == None:
+	# should never happen
+	out(1,"Can not get TCPREMOTEIP from environment")
+
+if os.environ.get('GREY') == None:
+	run_next()
+
+if os.environ.get('RELAYCLIENT') != None:
+	sys.stderr.write('Both GREY and RELAYCLIENT set for the same IP : %s' % remote_ip)
+	os.environ['RBLSMTPD'] = ''
+	run_next()
+
+# Build the name of the file to check
+
+ips = remote_ip.split('.')
+foldername = config['BASE']
+
+foldername = os.path.join(foldername,ips[0],ips[1])
+filename = os.path.join(foldername,ips[2])
+
+if log_per_ip:
+	filename += "-" + ips[3]
+
+# Check time and perform according action
+
+try:
+	now = time.time()
+
+	last_seen = os.path.getmtime(filename)
+	first_seen = os.path.getctime(filename)
+	
+	delta_last = now - last_seen
+	delta_first = now - first_seen
+except:
+	try:
+		os.makedirs(foldername,0700)
+	except:
+		# The folder most likely already exist
+		pass
+	try:
+		open(filename,'w').close()
+		os.environ['RBLSMTPD'] = 'greylisting, IP %s time -' % remote_ip
+	except:
+		log('issue trying the initial touching of the file %s (or creating the folder)' % filename)
+	cleanup()
+	run_next()
+
+# if you never waited two minutes without sending
+if delta_first < config['WAITING']:
+	try:
+		os.unlink(filename)
+		open(filename,'w').close()
+		os.environ['RBLSMTPD'] = 'greylisting, IP %s time %d' % (remote_ip,int(delta_last))
+	except:
+		log('issue with touching file %s' % filename)
+	cleanup()
+	run_next()
+	
+# deliver valid email
+run_next()
