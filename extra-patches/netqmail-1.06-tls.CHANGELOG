@@ -1,3 +1,13 @@
+2019-04-17
+  * bug: qmail-smtpd ssl_free before tls_out error string (K. Wheeler)
+
+2019-04-08
+  * correct OPENSSL_VERSION_NUMBER for 2019-03-22 patch (K. Peter, R. Puzzanghera, A. Schleier)
+
+2019-03-22
+  * make compatible with openssl 1.1.0 (Rolf Eike Beer, Dirk Engling, Alexander Hof)
+  * compiler warnings on char * casts (Kai Peter)
+  
 2016-09-18
   * bug: qmail-remote accepting any dNSName, without checking that is matches (E. Surovegin) 
   * bug: documentation regarding RSA and DH keys (K. Peter, G. A. Bofill)

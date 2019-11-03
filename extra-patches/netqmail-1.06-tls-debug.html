@@ -20,9 +20,7 @@ This should again show STARTTLS. Issue STARTTLS. The
 server should return <code>220 ready for tls</code>.
 <li> Run <code>openssl s_client -starttls smtp -crlf -connect localhost:25
 </code>. There you should have a "normal" SMTP session.
-<li> You can also give s_client a client cert. This way you can debug
-the cert-based relaying.
-<!-- openssl s_client -starttls smtp -crlf -connect ns.nettotime.com:2525 -cert ~/priv/fv.pem -CAfile ~/priv/00.pem -debug -key ~/priv/fv.pem -->
+<li> To debug cert-based relaying: <code> openssl s_client -starttls smtp -crlf -connect your.host.fqdn-or-ip:25 -cert mycert.pem -key mycert.pem -state</code>. After <code>mail from: &lt;&gt;  rcpt to: &lt;a@b.c&gt;</code> you should see the server's certificate request and the client's certificate transmission.
 </ul>
 
 <H1>qmail-remote</H1>
