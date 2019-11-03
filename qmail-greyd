@@ -107,8 +107,22 @@ if remote_ip == None:
 	# should never happen
 	out(1,"Can not get TCPREMOTEIP from environment")
 
-if os.environ.get('GREY') == None:
+grey = os.environ.get('GREY')
+
+if grey == None:
 	run_next()
+
+if len(grey) > 0:
+	grey = int(grey)
+else:
+	grey = 1
+
+greymsg = os.environ.get('GREYMSG')
+
+if greymsg is not None and len(greymsg) > 0:
+	greymsg = "; " + greymsg
+else:
+	greymsg = ""
 
 if os.environ.get('RELAYCLIENT') != None:
 	sys.stderr.write('Both GREY and RELAYCLIENT set for the same IP : %s' % remote_ip)
@@ -144,18 +158,19 @@ except:
 		pass
 	try:
 		open(filename,'w').close()
-		os.environ['RBLSMTPD'] = 'greylisting, IP %s time -' % remote_ip
+		os.environ['RBLSMTPD'] = 'greylisting, IP %s time -%s' % (remote_ip, greymsg)
 	except:
 		log('issue trying the initial touching of the file %s (or creating the folder)' % filename)
 	cleanup()
 	run_next()
 
 # if you never waited two minutes without sending
-if delta_first < config['WAITING']:
+if delta_first < config['WAITING'] * grey:
+	log("have not waited long enough, resetting clock (%d < %d)" % (delta_first, config['WAITING'] * grey))
 	try:
 		os.unlink(filename)
 		open(filename,'w').close()
-		os.environ['RBLSMTPD'] = 'greylisting, IP %s time %d' % (remote_ip,int(delta_last))
+		os.environ['RBLSMTPD'] = 'greylisting, IP %s time %d%s' % (remote_ip, int(delta_last), greymsg)
 	except:
 		log('issue with touching file %s' % filename)
 	cleanup()
