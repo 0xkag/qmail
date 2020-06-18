@@ -102,7 +102,7 @@ void hier()
 
   c(auto_qmail,"bin","qmail-queue",auto_uidq,auto_gidq,04711);
   c(auto_qmail,"bin","qmail-lspawn",auto_uido,auto_gidq,0700);
-  c(auto_qmail,"bin","qmail-greyd",auto_uido,auto_gidq,0700);
+  c(auto_qmail,"bin","qmail-greyd",auto_uido,auto_gidq,0755);
   c(auto_qmail,"bin","qmail-start",auto_uido,auto_gidq,0700);
   c(auto_qmail,"bin","qmail-getpw",auto_uido,auto_gidq,0711);
   c(auto_qmail,"bin","qmail-local",auto_uido,auto_gidq,0711);
