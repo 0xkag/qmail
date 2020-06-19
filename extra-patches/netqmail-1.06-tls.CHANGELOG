@@ -1,3 +1,6 @@
+2020-01-07
+  * working client cert authentication with TLSv1.3 (Rolf Eike Beer)
+
 2019-04-17
   * bug: qmail-smtpd ssl_free before tls_out error string (K. Wheeler)
 
