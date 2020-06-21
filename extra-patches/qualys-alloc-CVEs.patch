@@ -1,0 +1,158 @@
+> https://www.openwall.com/lists/oss-security/2020/05/19/8
+> qmail CVE-2005-1513, CVE-2005-1514, CVE-2005-1515
+> qmail-verify (if used) CVE-2020-3811, CVE-2020-3812
+
+diff -r -u netqmail_1.06-6/alloc.c netqmail_1.06-6+patches/alloc.c
+--- netqmail_1.06-6/alloc.c     1998-06-15 03:53:16.000000000 -0700
++++ netqmail_1.06-6+patches/alloc.c     2020-05-04 16:43:32.923310325 -0700
+@@ -1,3 +1,4 @@
++#include <limits.h>
+ #include "alloc.h"
+ #include "error.h"
+ extern char *malloc();
+@@ -15,6 +16,10 @@
+ unsigned int n;
+ {
+   char *x;
++  if (n >= (INT_MAX >> 3)) {
++    errno = error_nomem;
++    return 0;
++  }
+   n = ALIGNMENT + n - (n & (ALIGNMENT - 1)); /* XXX: could overflow */
+   if (n <= avail) { avail -= n; return space + avail; }
+   x = malloc(n);
+diff -r -u netqmail_1.06-6/qmail-verify.c netqmail_1.06-6+patches/qmail-verify.c
+--- netqmail_1.06-6/qmail-verify.c      2020-05-02 09:02:51.954415101 -0700
++++ netqmail_1.06-6+patches/qmail-verify.c      2020-05-08 04:47:27.555539058 -0700
+@@ -16,6 +16,8 @@
+ #include <sys/types.h>
+ #include <sys/stat.h>
+ #include <unistd.h>
++#include <limits.h>
++#include <grp.h>
+ #include <pwd.h>
+ #include <sys/socket.h>
+ #include <netinet/in.h>
+@@ -38,6 +40,7 @@
+ #include "ip.h"
+ #include "qmail-verify.h"
+ #include "errbits.h"
++#include "scan.h"
+
+ #define enew()  { eout("qmail-verify: "); }
+ #define GETPW_USERLEN 32
+@@ -71,6 +74,7 @@
+ void die_comms()   { enew(); eout("Misc. comms problem: exiting.\n"); eflush(); _exit(1); }
+ void die_inuse()   { enew(); eout("Port already in use: exiting.\n"); eflush(); _exit(1); }
+ void die_socket()  { enew(); eout("Error setting up socket: exiting.\n"); eflush(); _exit(1); }
++void die_privs()   { enew(); eout("Unable to drop/restore privileges: exiting.\n"); eflush(); _exit(1); }
+
+ char *posstr(buf,status)
+ char *buf; int status;
+@@ -207,10 +211,47 @@
+   return 0;
+ }
+
++static int stat_as(uid, gid, path, sbuf)
++const uid_t uid;
++const gid_t gid;
++const char * const path;
++struct stat * const sbuf;
++{
++  static gid_t groups[NGROUPS_MAX + 1];
++  int ngroups = 0;
++  const gid_t saved_egid = getegid();
++  const uid_t saved_euid = geteuid();
++  int ret = -1;
++
++  if (saved_euid == 0) {
++    ngroups = getgroups(sizeof(groups) / sizeof(groups[0]), groups);
++    if (ngroups < 0 ||
++        setgroups(1, &gid) != 0 ||
++        setegid(gid) != 0 ||
++        seteuid(uid) != 0) {
++      die_privs();
++    }
++  }
++
++  ret = stat(path, sbuf);
++
++  if (saved_euid == 0) {
++    if (seteuid(saved_euid) != 0 ||
++        setegid(saved_egid) != 0 ||
++        setgroups(ngroups, groups) != 0) {
++      die_privs();
++    }
++  }
++
++  return ret;
++}
++
+ int verifyaddr(addr)
+ char *addr;
+ {
+   char *homedir;
++  uid_t uid = -1;
++  gid_t gid = -1;
+   /* static since they get re-used on each call to verifyaddr(). Note
+      that they don't need resetting since initial use is always with
+      stralloc_copys() except wildchars (reset with ...len=0 below). */
+@@ -303,6 +344,7 @@
+           if (r == 1)
+           {
+             char *x;
++            unsigned long u;
+             if (!stralloc_ready(&nughde,(unsigned int) dlen)) die_nomem();
+             nughde.len = dlen;
+             if (cdb_bread(fd,nughde.s,nughde.len) == -1) die_cdb();
+@@ -318,10 +360,14 @@
+             if (x == nughde.s + nughde.len) return allowaddr(addr,ADDR_OK|QVPOS3);
+             ++x;
+             /* skip uid */
++            scan_ulong(x,&u);
++            uid = u;
+             x += byte_chr(x,nughde.s + nughde.len - x,'\0');
+             if (x == nughde.s + nughde.len) return allowaddr(addr,ADDR_OK|QVPOS4);
+             ++x;
+             /* skip gid */
++            scan_ulong(x,&u);
++            gid = u;
+             x += byte_chr(x,nughde.s + nughde.len - x,'\0');
+             if (x == nughde.s + nughde.len) return allowaddr(addr,ADDR_OK|QVPOS5);
+             ++x;
+@@ -360,6 +406,8 @@
+   if (!stralloc_copys(&nughde,pw->pw_dir)) die_nomem();
+   if (!stralloc_0(&nughde)) die_nomem();
+   homedir=nughde.s;
++  uid = pw->pw_uid;
++  gid = pw->pw_gid;
+
+   got_nughde:
+
+@@ -380,7 +428,7 @@
+     if (!stralloc_cat(&qme,&safeext)) die_nomem();
+     if (!stralloc_0(&qme)) die_nomem();
+ /* e.g. homedir/.qmail-localpart */
+-    if (stat(qme.s,&st) == 0) return allowaddr(addr,ADDR_OK|QVPOS10);
++    if (stat_as(uid,gid,qme.s,&st) == 0) return allowaddr(addr,ADDR_OK|QVPOS10);
+     if (errno != error_noent) {
+       return stat_error(qme.s,errno, STATERR|QVPOS11); /* Maybe not running as root so access denied */
+     }
+@@ -394,7 +442,7 @@
+         if (!stralloc_cats(&qme,"default")) die_nomem();
+         if (!stralloc_0(&qme)) die_nomem();
+ /* e.g. homedir/.qmail-[xxx-]default */
+-        if (stat(qme.s,&st) == 0) {
++        if (stat_as(uid,gid,qme.s,&st) == 0) {
+          /* if it's ~alias/.qmail-default, optionally check aliases.cdb */
+           if (!i && (quser == auto_usera)) {
+             char *s;
+@@ -423,6 +471,7 @@
+   char *s;
+
+   if (chdir(auto_qmail) == -1) die_control();
++  if (control_init() == -1) die_control();
+
+   if (control_rldef(&envnoathost,"control/envnoathost",1,"envnoathost") != 1)
+     die_control();
+

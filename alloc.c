@@ -1,3 +1,4 @@
+#include <limits.h>
 #include "alloc.h"
 #include "error.h"
 extern char *malloc();
@@ -15,6 +16,10 @@ static unsigned int avail = SPACE; /* multiple of ALIGNMENT; 0<=avail<=SPACE */
 unsigned int n;
 {
   char *x;
+  if (n >= (INT_MAX >> 3)) {
+    errno = error_nomem;
+    return 0;
+  }
   n = ALIGNMENT + n - (n & (ALIGNMENT - 1)); /* XXX: could overflow */
   if (n <= avail) { avail -= n; return space + avail; }
   x = malloc(n);
