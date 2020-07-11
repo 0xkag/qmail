@@ -1,0 +1,46 @@
+--- netqmail-1.06.orig/qmail-smtpd.c
++++ netqmail-1.06/qmail-smtpd.c
+@@ -42,6 +42,7 @@ void tls_init();
+ int tls_verify();
+ void tls_nogateway();
+ int ssl_rfd = -1, ssl_wfd = -1; /* SSL_get_Xfd() are broken */
++int forcetls = 1;
+ #endif
+
+ int safewrite(fd,buf,len) int fd; char *buf; int len;
+@@ -191,6 +192,8 @@ void setup()
+   }
+
+ #ifdef TLS
++  x = env_get("FORCETLS");
++  if (x && !str_diff(x, "0")) forcetls = 0;
+   if (env_get("SMTPS")) { smtps = 1; tls_init(); }
+   else
+ #endif
+@@ -367,9 +370,15 @@ void smtp_ehlo(arg) char *arg;
+     out("\r\n250-STARTTLS");
+ #endif
+   out("\r\n250-PIPELINING\r\n250-8BITMIME\r\n");
++#ifdef TLS
++  if (!forcetls || ssl) {
++#endif
+   if (smtpauth == 1 || smtpauth == 11) out("250-AUTH LOGIN PLAIN\r\n");
+   if (smtpauth == 2 || smtpauth == 12) out("250-AUTH CRAM-MD5\r\n");
+   if (smtpauth == 3 || smtpauth == 13) out("250-AUTH LOGIN PLAIN CRAM-MD5\r\n");
++#ifdef TLS
++  }
++#endif
+   out("250 SIZE "); out(size); out("\r\n");
+   seenmail = 0; dohelo(arg);
+ }
+@@ -728,6 +737,10 @@ char *arg;
+   if (seenauth) { err_authd(); return; }
+   if (seenmail) { err_authmail(); return; }
+
++#ifdef TLS
++  if (forcetls && !ssl) { out("538 auth not available without TLS (#5.3.3)\r\n"); return; }
++#endif
++
+   if (!stralloc_copys(&user,"")) die_nomem();
+   if (!stralloc_copys(&pass,"")) die_nomem();
+   if (!stralloc_copys(&resp,"")) die_nomem();

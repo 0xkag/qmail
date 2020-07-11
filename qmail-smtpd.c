@@ -42,6 +42,7 @@ void tls_init();
 int tls_verify();
 void tls_nogateway();
 int ssl_rfd = -1, ssl_wfd = -1; /* SSL_get_Xfd() are broken */
+int forcetls = 1;
 #endif
 
 int safewrite(fd,buf,len) int fd; char *buf; int len;
@@ -201,6 +202,8 @@ void setup()
     if (case_starts(auth,"!+cram")) smtpauth = 13;
   }
 #ifdef TLS
+  x = env_get("FORCETLS");
+  if (x && !str_diff(x, "0")) forcetls = 0;
   if (env_get("SMTPS")) { smtps = 1; tls_init(); }
   else
 #endif
@@ -375,11 +378,17 @@ void smtp_ehlo(arg) char *arg;
     out("\r\n250-STARTTLS");
 #endif
   out("\r\n250-PIPELINING\r\n250-8BITMIME\r\n");
-  char size[FMT_ULONG];
-  size[fmt_ulong(size,(unsigned int) databytes)] = 0;
+#ifdef TLS
+  if (!forcetls || ssl) {
+#endif
   if (smtpauth == 1 || smtpauth == 11) out("250-AUTH LOGIN PLAIN\r\n");
   if (smtpauth == 2 || smtpauth == 12) out("250-AUTH CRAM-MD5\r\n");
   if (smtpauth == 3 || smtpauth == 13) out("250-AUTH LOGIN PLAIN CRAM-MD5\r\n");
+#ifdef TLS
+  }
+#endif
+  char size[FMT_ULONG];
+  size[fmt_ulong(size,(unsigned int) databytes)] = 0;
   out("250 SIZE "); out(size); out("\r\n");
   seenmail = 0; dohelo(arg);
 }
@@ -743,6 +752,10 @@ char *arg;
   if (!smtpauth || !*childargs) { out("503 auth not available (#5.3.3)\r\n"); return; }
   if (seenauth) { err_authd(); return; }
   if (seenmail) { err_authmail(); return; }
+
+#ifdef TLS
+  if (forcetls && !ssl) { out("538 auth not available without TLS (#5.3.3)\r\n"); return; }
+#endif
 
   if (!stralloc_copys(&user,"")) die_nomem();
   if (!stralloc_copys(&pass,"")) die_nomem();
