@@ -1,0 +1,12 @@
+--- qmail-control.9.orig  15-06-1998
++++ qmail-control.9       2015-08-08/23/15
+--- ../qmail-1.03/qmail-control.9	1998-06-15 12:53:16.000000000 +0200
++++ ../qmail-1.03.083/qmail-control.9	2004-10-04 13:33:25.000000000 +0200
+@@ -40,6 +40,7 @@
+ .ta 5c 10c
+ control	default	used by
+ 
++.I authsender	\fR(none)	\fRqmail-remote
+ .I badmailfrom	\fR(none)	\fRqmail-smtpd
+ .I bouncefrom	\fRMAILER-DAEMON	\fRqmail-send
+ .I bouncehost	\fIme	\fRqmail-send
