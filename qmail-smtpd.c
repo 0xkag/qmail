@@ -19,6 +19,8 @@
 #include "env.h"
 #include "now.h"
 #include "exit.h"
+#include "fork.h"
+#include "wait.h"
 #include "rcpthosts.h"
 #include "timeoutread.h"
 #include "timeoutwrite.h"
@@ -67,6 +69,10 @@ void out(s) char *s; { substdio_puts(&ssout,s); }
 void die_read() { _exit(1); }
 void die_alarm() { out("451 timeout (#4.4.2)\r\n"); flush(); _exit(1); }
 void die_nomem() { out("421 out of memory (#4.3.0)\r\n"); flush(); _exit(1); }
+void die_tempfail() { out("421 temporary envelope failure (#4.3.0)\r\n"); flush(); _exit(1); }
+void die_fork() { out("421 Unable to fork (#4.3.0)\r\n"); flush(); _exit(1); }
+void die_exec() { out("421 Unable to exec (#4.3.0)\r\n"); flush(); _exit(1); }
+void die_childcrashed() { out("421 Aack, child crashed. (#4.3.0)\r\n"); flush(); _exit(1); }
 void die_control() { out("421 unable to read controls (#4.3.0)\r\n"); flush(); _exit(1); }
 void die_ipme() { out("421 unable to figure out my IP addresses (#4.3.0)\r\n"); flush(); _exit(1); }
 void die_cdb() { out("421 unable to read cdb user database (#4.3.0)\r\n"); flush(); _exit(1); }
@@ -74,6 +80,7 @@ void die_sys() { out("421 unable to read system user database (#4.3.0)\r\n"); fl
 void straynewline() { out("451 See http://pobox.com/~djb/docs/smtplf.html.\r\n"); flush(); _exit(1); }
 
 void err_size() { out("552 sorry, that message size exceeds my databytes limit (#5.3.4)\r\n"); }
+void err_permfail() { out("553 permanent envelope failure (#5.7.1)\r\n"); flush(); _exit(1); }
 void err_bmf() { out("553 sorry, your envelope sender is in my badmailfrom list (#5.7.1)\r\n"); }
 #ifndef TLS
 void err_nogateway() { out("553 sorry, that domain isn't in my list of allowed rcpthosts (#5.7.1)\r\n"); }
@@ -361,6 +368,29 @@ void mailfrom_parms(arg) char *arg;
     }
 }
 
+void checkenv()
+{
+  int child;
+  int wstat;
+  char *checkenvarg[] = { "bin/qmail-checkenv", mailfrom.s, addr.s, 0 };
+
+  switch(child = fork())
+  {
+    case -1:
+      die_fork();
+    case 0:
+      execv(*checkenvarg,checkenvarg);
+      die_exec();
+  }
+
+  wait_pid(&wstat,child);
+  if (wait_crashed(wstat))
+    die_childcrashed();
+  if (wait_exitcode(wstat) == 0) return;
+  if (wait_exitcode(wstat) == 100) err_permfail();
+  die_tempfail();
+}
+
 void smtp_helo(arg) char *arg;
 {
   smtp_greet("250 "); out("\r\n");
@@ -432,6 +462,7 @@ void smtp_rcpt(arg) char *arg; {
   if (!stralloc_cats(&rcptto,"T")) die_nomem();
   if (!stralloc_cats(&rcptto,addr.s)) die_nomem();
   if (!stralloc_0(&rcptto)) die_nomem();
+  if (env_get("CHECKENV")) checkenv();
   out("250 ok\r\n");
 }
 
