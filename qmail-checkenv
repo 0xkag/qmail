@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+# vim: et sw=4 ts=4:
+
+"""
+qmail-checkenv: Called by qmail checkenv patch.  Called with mail from and
+rcpt to as args, and various envirionment variables set.
+"""
+
+import io
+import os
+import sys
+
+import spf
+
+HARDFAIL = 100
+
+# TODO add extra exit codes to checkenv
+
+def out(s):
+    print('qmail-checkenv: %s' % s, file=sys.stderr)
+
+def main():
+    sys.stdout.flush()
+    sys.stdout.close()
+    os.dup2(2, 1)
+    # sys.stdout = io.TextIOWrapper(os.fdopen(1, 'wb', 0), line_buffering=True)
+    sys.stdout = sys.stderr
+
+    # the checkenv patch passes these
+
+    mailfrom = sys.argv[1]
+    rcptto = sys.argv[2]
+
+    # remote ip of client
+
+    remoteip = os.environ.get('TCPREMOTEIP', None)
+
+    # local port of server -- 25 or 587
+
+    localport = os.environ.get('TCPLOCALPORT', None)
+
+    # with the SMTP AUTH patch, this will be the authenticated username
+
+    remoteinfo = os.environ.get('TCPREMOTEINFO', None)
+
+    # set by tcpserver or by the SMTP AUTH patch; its presence means that
+    # relaying is ok
+
+    relayclient = os.environ.get('RELAYCLIENT', None)
+
+    # set by tcpserver; its presence means that rblsmtpd was bypassed
+
+    rblsmtpd = os.environ.get('RBLSMTPD', None)
+
+    # set by qmail-smtpd run; its presence means that SMTP AUTH is active and
+    # its contents is to be interpretted per that man page
+
+    smtpauth = os.environ.get('SMTPAUTH', None)
+
+    out('from=%s to=%s ip=%s info=%s relay=%s' %
+        (mailfrom, rcptto, remoteip, remoteinfo, relayclient is not None))
+
+    # bypass if relayclient
+
+    if relayclient is not None:
+        # TODO -- should still check "rcpt to" if its a local domain?
+        return 0
+
+    # check "rcpt to" delivery
+
+    # TODO -- use cvm-qmail?
+    # TODO -- replace realrcptto patch?
+
+    # check spf
+
+    spfstatus, spfmessage = spf.check2(i=remoteip, s=mailfrom, h=None)
+
+    out('spf %s: %s' % (spfstatus, spfmessage))
+
+    if spfstatus == 'fail':
+        # TODO -- exit code
+        return HARDFAIL
+
+    # greylisting
+
+    # TODO -- implement greylisting perhaps
+
+    return 0
+
+if __name__ == '__main__':
+    sys.exit(main())
+
