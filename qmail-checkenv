@@ -13,7 +13,7 @@ import sys
 import spf
 
 HARDFAIL = 100 # from checkenv patch
-SOFTFAIL = 111 # from man qmail-command; convention
+SOFTERROR = 111 # from man qmail-command; convention
 
 # TODO add extra exit codes to checkenv
 
@@ -76,10 +76,17 @@ def main():
 
     spfstatus, spfmessage = spf.check2(i=remoteip, s=mailfrom, h=None)
 
+    # ... spfstatus is 'pass', 'fail', 'neutral', 'softfail', 'permerror',
+    # 'temperror'.
+
     out('spf %s: %s' % (spfstatus, spfmessage))
 
+    # ... for now, ignore softfail but fail with a temporary error for hard
+    # spf failure ... so perhaps the message will be retried after the sender
+    # fixes the issue --- TODO eventually change this to HARDFAIL
+
     if spfstatus == 'fail':
-        return SOFTFAIL
+        return SOFTERROR
 
     # greylisting
 
