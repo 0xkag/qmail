@@ -12,7 +12,8 @@ import sys
 
 import spf
 
-HARDFAIL = 100
+HARDFAIL = 100 # from checkenv patch
+SOFTFAIL = 111 # from man qmail-command; convention
 
 # TODO add extra exit codes to checkenv
 
@@ -78,8 +79,7 @@ def main():
     out('spf %s: %s' % (spfstatus, spfmessage))
 
     if spfstatus == 'fail':
-        # TODO -- exit code
-        return HARDFAIL
+        return SOFTFAIL
 
     # greylisting
 
