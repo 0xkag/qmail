@@ -4,6 +4,8 @@
 """
 qmail-checkenv: Called by qmail checkenv patch.  Called with mail from and
 rcpt to as args, and various envirionment variables set.
+
+Requires pyspf>=2.0.12 be installed.
 """
 
 import io
