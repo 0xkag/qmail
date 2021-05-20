@@ -69,8 +69,9 @@ def main():
         kwargs_str = ' '.join(['%s=%r' % (x, y) for x, y in kwargs.items()])
 
         out(
-            'from=%s to=%s ip=%s info=%s relay=%s %s%scode=%s' %
+            '%d from=%s to=%s ip=%s info=%s relay=%s %s%scode=%s' %
             (
+                os.getppid(),
                 mailfrom,
                 rcptto,
                 remoteip,
