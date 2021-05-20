@@ -60,41 +60,61 @@ def main():
 
     smtpauth = os.environ.get('SMTPAUTH', None)
 
-    out('from=%s to=%s ip=%s info=%s relay=%s' %
-        (mailfrom, rcptto, remoteip, remoteinfo, relayclient is not None))
+    def result(code, *args, **kwargs):
+        args_str = ' '.join(['%r' % x for x in args])
+        kwargs_str = ' '.join(['%s=%r' % (x, y) for x, y in kwargs.items()])
 
-    # bypass if relayclient
+        out(
+            'from=%s to=%s ip=%s info=%s relay=%s %s%scode=%s' %
+            (
+                mailfrom,
+                rcptto,
+                remoteip,
+                remoteinfo,
+                relayclient is not None,
+                args_str + ' ' if args_str else '',
+                kwargs_str + ' ' if kwargs_str else '',
+                code
+            )
+        )
 
-    if relayclient is not None:
-        # TODO -- should still check "rcpt to" if its a local domain?
+        return code
+
+    try:
+        # bypass if relayclient
+
+        if relayclient is not None:
+            # TODO -- should still check "rcpt to" if its a local domain?
+            return result(0, reason='bypassing per relayclient')
+
+        # check "rcpt to" delivery
+
+        # TODO -- use cvm-qmail?
+        # TODO -- replace realrcptto patch?
+
+        # check spf
+
+        spfstatus, spfmessage = spf.check2(i=remoteip, s=mailfrom, h=None)
+
+        # ... spfstatus is 'pass', 'fail', 'neutral', 'softfail', 'permerror',
+        # 'temperror'.
+
+        # ... for now, ignore softfail but fail with a temporary error for hard
+        # spf failure ... so perhaps the message will be retried after the sender
+        # fixes the issue --- TODO eventually change this to HARDFAIL
+
+        if spfstatus == 'fail':
+            return result(SOFTERROR, spfstatus=spfstatus, spfmessage=spfmessage)
+
+        result(0, spfstatus=spfstatus, spfmessage=spfmessage)
+
+        # greylisting
+
+        # TODO -- implement greylisting
+
         return 0
-
-    # check "rcpt to" delivery
-
-    # TODO -- use cvm-qmail?
-    # TODO -- replace realrcptto patch?
-
-    # check spf
-
-    spfstatus, spfmessage = spf.check2(i=remoteip, s=mailfrom, h=None)
-
-    # ... spfstatus is 'pass', 'fail', 'neutral', 'softfail', 'permerror',
-    # 'temperror'.
-
-    out('spf %s: %s' % (spfstatus, spfmessage))
-
-    # ... for now, ignore softfail but fail with a temporary error for hard
-    # spf failure ... so perhaps the message will be retried after the sender
-    # fixes the issue --- TODO eventually change this to HARDFAIL
-
-    if spfstatus == 'fail':
-        return SOFTERROR
-
-    # greylisting
-
-    # TODO -- implement greylisting perhaps
-
-    return 0
+    except Exception as e:
+        return result(SOFTERROR, exception=str(e))
 
 if __name__ == '__main__':
     sys.exit(main())
