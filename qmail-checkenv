@@ -60,6 +60,10 @@ def main():
 
     smtpauth = os.environ.get('SMTPAUTH', None)
 
+    # set by tcpserver in my environment, when configured to do so
+
+    spfpass = os.environ.get('SPFPASS', None)
+
     def result(code, *args, **kwargs):
         args_str = ' '.join(['%r' % x for x in args])
         kwargs_str = ' '.join(['%s=%r' % (x, y) for x, y in kwargs.items()])
@@ -99,14 +103,21 @@ def main():
         # ... spfstatus is 'pass', 'fail', 'neutral', 'softfail', 'permerror',
         # 'temperror'.
 
-        # ... for now, ignore softfail but fail with a temporary error for hard
-        # spf failure ... so perhaps the message will be retried after the sender
-        # fixes the issue --- TODO eventually change this to HARDFAIL
+        # ... for now, ignore softfail but fail with a temporary error for
+        # hard spf failure ... so perhaps the message will be retried after
+        # the sender fixes the issue --- TODO eventually change this to
+        # HARDFAIL
 
-        if spfstatus == 'fail':
-            return result(SOFTERROR, spfstatus=spfstatus, spfmessage=spfmessage)
-
-        result(0, spfstatus=spfstatus, spfmessage=spfmessage)
+        if spfstatus != 'pass' and spfpass is not None:
+            result(0, spfstatus=spfstatus, spfmessage=spfmessage,
+                   spfpass='passing because spfpass is set')
+            # no return
+        elif spfstatus == 'fail':
+            return result(SOFTERROR, spfstatus=spfstatus,
+                          spfmessage=spfmessage)
+        else:
+            result(0, spfstatus=spfstatus, spfmessage=spfmessage)
+            # no return
 
         # greylisting
 
