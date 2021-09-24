@@ -12,6 +12,7 @@ import io
 import os
 import sys
 
+import DNS
 import spf
 
 HARDFAIL = 100 # from checkenv patch
@@ -73,8 +74,8 @@ def main():
              'rblsmtpd=%r spfpass=%r smtpauth=%r %s%scode=%s') %
             (
                 os.getppid(),
-                mailfrom,
-                rcptto,
+                mailfrom or repr(''),
+                rcptto or repr(''),
                 remoteip,
                 remoteinfo,
                 relayclient,
@@ -98,12 +99,30 @@ def main():
 
         # check "rcpt to" delivery
 
-        # TODO -- use cvm-qmail?
-        # TODO -- replace realrcptto patch?
+        # NOTE -- this is currently handled by realrcptto patch in my
+        # envirionment
+
+        # TODO -- use cvm-qmail? or otherwise replace realrcptto patch?
 
         # check spf
 
-        spfstatus, spfmessage = spf.check2(i=remoteip, s=mailfrom, h=None)
+        helo = None
+
+        try:
+            if not mailfrom:
+                # in the case of mail from:<> which is a way that mailer
+                # bounces get sent, and since qmail + patches doesn't
+                # currently share the helo name when calling qmail-checkenv,
+                # simulate it by using a PTR lookup on TCPREMOTEIP
+                #
+                # TODO -- patch qmail to set HELO arg into the environment
+
+                revip = '.'.join(remoteip.split('.')[::-1])
+                helo = DNS.dnslookup('%s.in-addr.arpa' % revip, 'PTR')[0]
+        except:
+            helo = None
+
+        spfstatus, spfmessage = spf.check2(i=remoteip, s=mailfrom, h=helo)
 
         # ... spfstatus is 'pass', 'fail', 'neutral', 'softfail', 'permerror',
         # 'temperror'.
@@ -116,17 +135,18 @@ def main():
         if spfstatus != 'pass' and spfpass is not None:
             result(0, spfstatus=spfstatus, spfmessage=spfmessage,
                    spfpass='passing because spfpass is set')
-            # no return
+            # FALLTHROUGH
         elif spfstatus == 'fail':
             return result(SOFTERROR, spfstatus=spfstatus,
                           spfmessage=spfmessage)
+            # NOTREACHED
         else:
             result(0, spfstatus=spfstatus, spfmessage=spfmessage)
-            # no return
+            # FALLTHROUGH
 
         # greylisting
 
-        # TODO -- implement greylisting
+        # TODO -- implement greylisting?  replace qmail-greyd?
 
         return 0
     except Exception as e:
