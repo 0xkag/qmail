@@ -55,28 +55,31 @@ def main():
 
     rblsmtpd = os.environ.get('RBLSMTPD', None)
 
+    # set by tcpserver in my environment, when configured to do so
+
+    spfpass = os.environ.get('SPFPASS', None)
+
     # set by qmail-smtpd run; its presence means that SMTP AUTH is active and
     # its contents is to be interpretted per that man page
 
     smtpauth = os.environ.get('SMTPAUTH', None)
-
-    # set by tcpserver in my environment, when configured to do so
-
-    spfpass = os.environ.get('SPFPASS', None)
 
     def result(code, *args, **kwargs):
         args_str = ' '.join(['%r' % x for x in args])
         kwargs_str = ' '.join(['%s=%r' % (x, y) for x, y in kwargs.items()])
 
         out(
-            '%d from=%s to=%s ip=%s info=%s relay=%s smtpauth=%r %s%scode=%s' %
+            ('%d mailfrom=%s rcptto=%s remoteip=%s remoteinfo=%r relayclient=%r '
+             'rblsmtpd=%r spfpass=%r smtpauth=%r %s%scode=%s') %
             (
                 os.getppid(),
                 mailfrom,
                 rcptto,
                 remoteip,
                 remoteinfo,
-                relayclient is not None,
+                relayclient,
+                rblsmtpd,
+                spfpass,
                 smtpauth,
                 args_str + ' ' if args_str else '',
                 kwargs_str + ' ' if kwargs_str else '',
