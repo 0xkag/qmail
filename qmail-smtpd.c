@@ -148,6 +148,7 @@ char *fakehelo; /* pointer into helohost, or 0 */
 void dohelo(arg) char *arg; {
   if (!stralloc_copys(&helohost,arg)) die_nomem(); 
   if (!stralloc_0(&helohost)) die_nomem(); 
+  if (!env_put2("SMTPHELO", helohost.s)) die_nomem();
   fakehelo = case_diffs(remotehost,helohost.s) ? helohost.s : 0;
 }
 
