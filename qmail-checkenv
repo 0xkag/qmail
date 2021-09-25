@@ -12,8 +12,9 @@ import io
 import os
 import sys
 
-import DNS
 import spf
+
+spf.MAX_LOOKUP = 40
 
 HARDFAIL = 100 # from checkenv patch
 SOFTERROR = 111 # from man qmail-command; convention
@@ -69,18 +70,23 @@ def main():
 
     smtpauth = os.environ.get('SMTPAUTH', None)
 
+    # set by qmail-smtpd patch we've made; this is the arg to HELO/EHLO
+
+    smtphelo = os.environ.get('SMTPHELO', None)
+
     def result(code, *args, **kwargs):
         args_str = ' '.join(['%r' % x for x in args])
         kwargs_str = ' '.join(['%s=%r' % (x, y) for x, y in kwargs.items()])
 
         out(
-            ('%d mailfrom=%s rcptto=%s remoteip=%s remotehost=%s '
+            ('%d mailfrom=%s rcptto=%s smtphelo=%s remoteip=%s remotehost=%s '
              'remoteinfo=%r relayclient=%r rblsmtpd=%r spfpass=%r '
              'smtpauth=%r %s%scode=%s') %
             (
                 os.getppid(),
                 mailfrom or repr(''),
                 rcptto or repr(''),
+                smtphelo,
                 remoteip,
                 remotehost,
                 remoteinfo,
@@ -112,23 +118,9 @@ def main():
 
         # check spf
 
-        helo = None
+        h = smtphelo or tcpremotehost
 
-        try:
-            if not mailfrom:
-                # in the case of mail from:<> which is a way that mailer
-                # bounces get sent, and since qmail + patches doesn't
-                # currently share the helo name when calling qmail-checkenv,
-                # simulate it by using a PTR lookup on TCPREMOTEIP
-                #
-                # TODO -- patch qmail to set HELO arg into the environment
-
-                revip = '.'.join(remoteip.split('.')[::-1])
-                helo = DNS.dnslookup('%s.in-addr.arpa' % revip, 'PTR')[0]
-        except:
-            helo = None
-
-        spfstatus, spfmessage = spf.check2(i=remoteip, s=mailfrom, h=helo)
+        spfstatus, spfmessage = spf.check2(i=remoteip, s=mailfrom, h=h)
 
         # ... spfstatus is 'pass', 'fail', 'neutral', 'softfail', 'permerror',
         # 'temperror'.
