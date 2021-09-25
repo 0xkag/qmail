@@ -35,9 +35,13 @@ def main():
     mailfrom = sys.argv[1]
     rcptto = sys.argv[2]
 
-    # remote ip of client
+    # remote ip of client; set by tcpserver
 
     remoteip = os.environ.get('TCPREMOTEIP', None)
+
+    # remote hostname of the client; set by tcpserver
+
+    remotehost = os.environ.get('TCPREMOTEHOST', None)
 
     # local port of server -- 25 or 587
 
@@ -70,13 +74,15 @@ def main():
         kwargs_str = ' '.join(['%s=%r' % (x, y) for x, y in kwargs.items()])
 
         out(
-            ('%d mailfrom=%s rcptto=%s remoteip=%s remoteinfo=%r relayclient=%r '
-             'rblsmtpd=%r spfpass=%r smtpauth=%r %s%scode=%s') %
+            ('%d mailfrom=%s rcptto=%s remoteip=%s remotehost=%s '
+             'remoteinfo=%r relayclient=%r rblsmtpd=%r spfpass=%r '
+             'smtpauth=%r %s%scode=%s') %
             (
                 os.getppid(),
                 mailfrom or repr(''),
                 rcptto or repr(''),
                 remoteip,
+                remotehost,
                 remoteinfo,
                 relayclient,
                 rblsmtpd,
