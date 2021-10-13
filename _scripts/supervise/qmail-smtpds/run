@@ -1,0 +1,7 @@
+#!/bin/bash
+
+export SMTPAUTH="!"
+export PORT=587
+
+source /service/qmail-smtpd/run
+
