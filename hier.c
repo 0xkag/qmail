@@ -100,6 +100,7 @@ void hier()
   c(auto_qmail,"doc","PIC.relaygood",auto_uido,auto_gidq,0644);
   c(auto_qmail,"doc","PIC.rem2local",auto_uido,auto_gidq,0644);
 
+  c(auto_qmail,"bin","qmailctl",auto_uido,auto_gidq,0755);
   c(auto_qmail,"bin","qmail-queue",auto_uidq,auto_gidq,04711);
   c(auto_qmail,"bin","qmail-lspawn",auto_uido,auto_gidq,0700);
   c(auto_qmail,"bin","qmail-greyd",auto_uido,auto_gidq,0755);
