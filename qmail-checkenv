@@ -5,24 +5,421 @@
 qmail-checkenv: Called by qmail checkenv patch.  Called with mail from and
 rcpt to as args, and various envirionment variables set.
 
-Requires pyspf>=2.0.12 be installed.
+(c) 2021 Kyle George <kgeorge@tcpsoft.com> -- BSD license
+
+Requires:
+
+* pyspf>=2.0.12 be installed.
+* rblcheck(1).
+* /var/qmail/grey to be created and writable by the qmail-smtpd user.
+
+Testing:
+
+* There are no unit tests yet :(.
+* It can be tested using something like this:
+
+env \
+    GREY="" \
+    GREYDB=/tmp/x.db \
+    TCPREMOTEIP=8.8.8.8 \
+    SMTPHELO=mail.python.org \
+    TCPREMOTEHOST=mail.python.org \
+    ./qmail-checkenv \
+        python-list-bounces+kgeorge=tcpsoft.com@python.org \
+        kgeorge@tcpsoft.com
+
+... where the args to qmail-checkenv are as per the checkenv patch: argv[1] is
+the mail from:<> arg, argv[2] is the rcpt to:<> arg.
 """
 
+from collections import namedtuple
+from datetime import datetime, timedelta
 import io
 import os
+import sqlite3
+import subprocess
 import sys
+import time
 
 import spf
 
 spf.MAX_LOOKUP = 40
 
-HARDFAIL = 100 # from checkenv patch
-SOFTERROR = 111 # from man qmail-command; convention
+# from checkenv patch and convention
 
-# TODO add extra exit codes to checkenv
+SUCCESS = 0
+
+# from checkenv patch
+
+HARDFAIL = 100
+
+# from man qmail-command; convention
+
+SOFTFAIL = 111
+
+# namedtuple used to store all check results
+
+checkresult = namedtuple('checkresult', 'code status message')
+
+# TODO use enums or at least "constants" where applicable
 
 def out(s):
+    """
+    Output to stderr according to convention.
+    """
+
     print('qmail-checkenv: %s' % s, file=sys.stderr)
+
+def check_greylist(remoteip, smtphelo, mailfrom, rcptto, grey, greydb,
+                   greymsg, relayclient):
+    """
+    Check envelope against greylist.  This is my own greylist implementation
+    based on remote IP.
+    """
+
+    # bypass: relayclient
+
+    if relayclient == '':
+        return checkresult(
+            code=SUCCESS,
+            status='bypassed',
+            message='bypassed due to RELAYCLIENT set and empty'
+        )
+
+    # bypass: grey
+
+    if grey is None:
+        return checkresult(
+            code=SUCCESS,
+            status='bypassed',
+            message='bypassed due to GREY not set'
+        )
+
+    # defaults
+
+    grey_default = 1 # minutes
+    grey_factor = 1
+
+    if len(grey) > 0:
+        try:
+            grey_factor = int(grey)
+        except:
+            grey_factor = 1
+
+    grey_delays = {
+        'grey': grey_default * grey_factor,
+        'penalty': grey_default * grey_factor * 2,
+    }
+
+    if greymsg is not None and len(greymsg) > 0:
+        greymsg = '; ' + greymsg
+    else:
+        greymsg = ''
+
+    now = datetime.utcnow()
+
+    # db
+
+    con = sqlite3.connect(
+        greydb,
+        detect_types=sqlite3.PARSE_DECLTYPES
+    )
+
+    con.row_factory = sqlite3.Row
+
+    # create table, conditionally
+
+    with con:
+        con.execute(
+            """
+                create table if not exists seen (
+                    remoteip not null,
+                    smtphelo not null,
+                    mailfrom not null,
+                    rcptto not null,
+                    decision not null,
+                    timestamp timestamp not null default current_timestamp
+                )
+            """
+        )
+
+    # select last record for this ip (NOTE: future enhancement could do it by
+    # /24, or incorporate (mailfrom, rcptto) tuple in the select
+
+    with con:
+        cur = con.cursor()
+
+        cur.execute(
+            """
+                select
+                    decision,
+                    timestamp
+                from
+                    seen
+                where
+                    remoteip = :remoteip
+                order by
+                    timestamp desc
+                limit
+                    1
+            """,
+            {
+                'remoteip': remoteip
+            }
+        )
+
+        row = cur.fetchone()
+
+        decision = 'grey'
+        previous_decision = row['decision'] if row else None
+        previous_timestamp = row['timestamp'] if row else None
+
+    # determine delay and decision
+
+    delay = grey_delays['grey']
+
+    if not previous_decision:
+        decision = 'grey'
+    elif previous_decision == 'allow':
+        decision = previous_decision
+    elif previous_decision in ['grey', 'penalty']:
+        delay = grey_delays[previous_decision]
+
+        if now - previous_timestamp >= timedelta(minutes=delay):
+            decision = 'allow'
+        else:
+            decision = 'penalty'
+
+    try_delta = now - previous_timestamp if previous_timestamp else None
+
+    trymsg = " (previously waited %s seconds)" % try_delta.seconds \
+        if try_delta else ""
+
+    # insert record of this attempt and decision
+
+    with con:
+        con.execute(
+            """
+                insert into seen
+                    (remoteip, smtphelo, mailfrom, rcptto, decision)
+                values
+                    (:remoteip, :smtphelo, :mailfrom, :rcptto, :decision)
+            """,
+            {
+                'remoteip': remoteip,
+                'smtphelo': smtphelo,
+                'mailfrom': mailfrom,
+                'rcptto': rcptto,
+                'decision': decision
+            }
+        )
+
+    # prune
+
+    with con:
+        # delete any entry 32 days or older
+
+        con.execute(
+            """
+                delete from
+                    seen
+                where
+                    timestamp <= (select datetime('now', '-5 minutes'))
+            """
+        )
+
+        # delete any single failed attempt more than 3 days old
+
+        con.execute(
+            """
+                delete from
+                    seen
+                where
+                    remoteip = (
+                        select
+                            remoteip
+                        from
+                            seen
+                        group by
+                            remoteip
+                        having
+                            count(remoteip) == 1
+                    ) and
+                    decision <> 'allow' and
+                    timestamp <= (select datetime('now', '-1 minute'))
+            """
+        )
+
+    # result
+
+    if decision == 'allow':
+        return checkresult(
+            code=SUCCESS,
+            status='pass',
+            message='not subject to greylisting'
+        )
+    else:
+        return checkresult(
+            code=SOFTFAIL,
+            status='softfail',
+            message=(
+                f'try again from this IP in {delay*60} seconds'
+                f'{trymsg}{greymsg}'
+            )
+        )
+
+def check_rbl(remoteip, rblsmtpd, relayclient):
+    """
+    Check RBL.
+    """
+
+    # bypass: relayclient
+
+    if relayclient == '':
+        return checkresult(
+            code=SUCCESS,
+            status='bypassed',
+            message='bypassed due to RELAYCLIENT set and empty'
+        )
+
+    # bypass: rblsmtpd
+
+    if rblsmtpd == '':
+        return checkresult(
+            code=SUCCESS,
+            status='bypassed',
+            message='bypassed due to RBLSMTPD set and empty'
+        )
+
+    # rblsmtpd set; fail
+
+    if rblsmtpd is not None:
+        if rblsmtpd.startswith('-'):
+            # hardfail
+
+            return checkresult(
+                code=HARDFAIL,
+                status='hardfail',
+                message=rblsmtpd[1:]
+            )
+        else:
+            # softfail
+
+            return checkresult(
+                code=SOFTFAIL,
+                status='softfail',
+                message=rblsmtpd
+            )
+
+    # rbl check
+
+    try:
+        # execute rblcheck
+
+        output = subprocess.check_output(
+            [
+                'rblcheck', '-t', '-c', '-m', '-s', 'zen.spamhaus.org',
+                remoteip
+            ],
+            timeout=5
+        )
+    except subprocess.TimeoutExpired as e:
+        # treat a timeout as a pass
+
+        result = checkresult(
+            code=SUCCESS,
+            status='timeout',
+            message='passing due to timeout'
+        )
+    except subprocess.CalledProcessError as e:
+        if e.returncode == 1:
+            # rbl check failure; expected
+
+            result = checkresult(
+                code=SOFTFAIL,
+                status='softfail',
+                message=e.stdout.strip().decode('utf-8')
+            )
+        else:
+            # unexpected non-zero exitcode
+
+            raise
+    else:
+        # rbl pass
+
+        result = checkresult(
+            code=SUCCESS,
+            status='pass',
+            message=output.strip().decode('utf-8')
+        )
+
+    return result
+
+def check_rcptto():
+    """
+    Check rcpt to:<>; currently not implemented and thus a no-op.
+    """
+
+    # TODO NOTE -- this is currently handled by realrcptto patch in my
+    # envirionment  Should I use cvm-qmail or otherwise replace realrcptto
+    # patch by rolling my own here?
+
+    return checkresult(code=SUCCESS, status='n/a', message='n/a')
+
+def check_spf(remoteip, remotehost, smtphelo, mailfrom, relayclient,
+              spfpass):
+    """
+    Check SPF.
+    """
+
+    h = smtphelo or remotehost
+
+    spfstatus, spfmessage = spf.check2(i=remoteip, s=mailfrom, h=h)
+
+    # spfstatus is 'pass', 'fail', 'neutral', 'softfail', 'permerror',
+    # 'temperror'.
+
+    # for now, ignore softfail but fail with a temporary error for hard spf
+    # failure ... so perhaps the message will be retried after the sender
+    # fixes the issue --- TODO eventually change this to HARDFAIL
+
+    if spfstatus != 'pass' and spfpass == '':
+        result = checkresult(
+            code=SUCCESS,
+            status='bypassed',
+            message=(
+                f'{spfstatus} -- {spfmessage} -- but bypassed due '
+                f'to SPFPASS set and empty'
+            )
+        )
+    elif spfstatus != 'pass' and relayclient == '':
+        result = checkresult(
+            code=SUCCESS,
+            status='bypassed',
+            message=(
+                f'{spfstatus} -- {spfmessage} -- but bypassed due '
+                f'to RELAYCLIENT set and empty'
+            )
+        )
+    elif spfstatus == 'fail':
+        result = checkresult(
+            code=SOFTFAIL,
+            status=spfstatus,
+            message=spfmessage
+        )
+    else:
+        # covers pass, neutral, none ... and also allows permerror, temperror,
+        # softfail
+
+        # TODO stop allowing the latter three?
+
+        result = checkresult(
+            code=SUCCESS,
+            status=spfstatus,
+            message=spfmessage
+        )
+
+    return result
 
 def main():
     sys.stdout.flush()
@@ -36,56 +433,105 @@ def main():
     mailfrom = sys.argv[1]
     rcptto = sys.argv[2]
 
-    # remote ip of client; set by tcpserver
+    # >> things set by tcpserver natively or qmail-smtpd
+
+    # TCPREMOTEIP: remote ip of client; set by tcpserver
 
     remoteip = os.environ.get('TCPREMOTEIP', None)
 
-    # remote hostname of the client; set by tcpserver
+    # TCPREMOTEHOST: remote hostname of the client; set by tcpserver
 
     remotehost = os.environ.get('TCPREMOTEHOST', None)
 
-    # local port of server -- 25 or 587
+    # TCPLOCALPORT: local port of server -- 25 or 587; set by tcpserver
 
     localport = os.environ.get('TCPLOCALPORT', None)
 
-    # with the SMTP AUTH patch, this will be the authenticated username
+    # TCPREMOTEINFO: set by tcpserver, but also by the SMTP AUTH patch, this
+    # will be the authenticated username
 
     remoteinfo = os.environ.get('TCPREMOTEINFO', None)
 
-    # set by tcpserver or by the SMTP AUTH patch; its presence means that
-    # relaying is ok
-
-    relayclient = os.environ.get('RELAYCLIENT', None)
-
-    # set by tcpserver; its presence means that rblsmtpd was bypassed
-
-    rblsmtpd = os.environ.get('RBLSMTPD', None)
-
-    # set by tcpserver in my environment, when configured to do so
-
-    spfpass = os.environ.get('SPFPASS', None)
-
-    # set by qmail-smtpd run; its presence means that SMTP AUTH is active and
-    # its contents is to be interpretted per that man page
-
-    smtpauth = os.environ.get('SMTPAUTH', None)
-
-    # set by qmail-smtpd patch we've made; this is the arg to HELO/EHLO
+    # SMTPHELO: set by qmail-smtpd patch we've made; this is the arg to
+    # HELO/EHLO
 
     smtphelo = os.environ.get('SMTPHELO', None)
 
-    def result(code, *args, **kwargs):
+    # >> things set by tcpserver or qmail-smtpd that control our check
+    # behavior
+
+    # GREY: set by tcpserver tcprules in my environment; when set, it
+    # indicates that the client is subject to greylisting; when empty it means
+    # default parameters; when non-empty it's a time in minutes used to
+    # multiply the default waiting period; this is a holdover convention from
+    # a previous greylisting patch I used
+
+    grey = os.environ.get('GREY', None)
+
+    # GREYDB: set by by qmail-smtpd run in my environment and used here in the
+    # greylisting implementation to store the greylist
+
+    greydb = os.environ.get('GREYDB', '/var/qmail/grey/grey.db')
+
+    # GREYMSG: set by tcpserver tcprules in my environment as an extra
+    # informative message to be used for greylisting (based on client IP or
+    # reverse domain); this is a convention / holdover from a previous
+    # greylisting patch I used
+
+    greymsg = os.environ.get('GREYMSG', None)
+
+    # RELAYCLIENT: set by tcpserver tcprules in my environment, or by the SMTP
+    # AUTH patch, or by the TLS patch when client cert is used; its presence
+    # means that relaying is ok
+
+    relayclient = os.environ.get('RELAYCLIENT', None)
+
+    # RBLSMTPD: set by tcpserver tcprules in my environment; its presence when
+    # empty means that rblsmtpd was bypassed; when present and non-empty it
+    # means what rblsmtpd(1) would interpret it as defined in the manpage;
+    # since I no longer use rblsmtpd(1), I now interpret it the same way as
+    # rblsmtpd(1) did
+
+    rblsmtpd = os.environ.get('RBLSMTPD', None)
+
+    # SMTPAUTH: set by qmail-smtpd run in my environment and used by the SMTP
+    # AUTH patch; its presence means that SMTP AUTH is available and its
+    # contents is to be interpretted per that man page; it does NOT mean that
+    # the user has been authenticated
+
+    smtpauth = os.environ.get('SMTPAUTH', None)
+
+    # SPFPASS: set by tcpserver tcprules in my environment; it's presence
+    # means that any SPF failures should be overridden (mail allowed)
+
+    spfpass = os.environ.get('SPFPASS', None)
+
+    # open output file; by convention with our patch to qmail-smtpd's
+    # already-applied checkenv(), FD 3 is where this program will write the
+    # client-visible message
+
+    try:
+        fmsg = os.fdopen(3, 'a')
+    except:
+        fmsg = sys.stdout
+
+    # perform checks
+
+    def done(code, *args, msg='', **kwargs):
         args_str = ' '.join(['%r' % x for x in args])
         kwargs_str = ' '.join(['%s=%r' % (x, y) for x, y in kwargs.items()])
 
+        # write to stderr (for logs)
+
         out(
-            ('%d mailfrom=%s rcptto=%s smtphelo=%s remoteip=%s remotehost=%s '
-             'remoteinfo=%r relayclient=%r rblsmtpd=%r spfpass=%r '
-             'smtpauth=%r %s%scode=%s') %
+            ('%d mailfrom=%s rcptto=%s smtpauth=%r smtphelo=%s remoteip=%s '
+             'remotehost=%s remoteinfo=%r relayclient=%r rblsmtpd=%r '
+             'spfpass=%r: %s%scode=%s') %
             (
                 os.getppid(),
                 mailfrom or repr(''),
                 rcptto or repr(''),
+                smtpauth,
                 smtphelo,
                 remoteip,
                 remotehost,
@@ -93,62 +539,100 @@ def main():
                 relayclient,
                 rblsmtpd,
                 spfpass,
-                smtpauth,
                 args_str + ' ' if args_str else '',
                 kwargs_str + ' ' if kwargs_str else '',
                 code
             )
         )
 
-        return code
+        # write to fmsg (for client)
+
+        fmsg.write(msg)
+        fmsg.flush()
+        fmsg.close()
+
+        # exit
+
+        sys.exit(code)
+
+        # NOTREACHED
+
+    def results_to_done(results):
+        code = 0
+        msg = ''
+        kwargs = {}
+
+        for k, v in results.items():
+            d = {}
+            d[k + 'code'] = v.code
+            d[k + 'status'] = v.status
+            d[k + 'message'] = v.message
+            kwargs.update(d)
+
+            if v.code != 0:
+                if code == HARDFAIL:
+                    # already have a HARDFAIL, don't override it
+                    continue
+
+                if code == v.code:
+                    # already have a code == v.code; don't override it
+                    continue
+
+                code = v.code
+                msg = v.message
+
+        return done(code, msg=msg, **kwargs)
 
     try:
-        # bypass if relayclient
+        results = {}
 
-        if relayclient is not None:
-            # TODO -- should still check "rcpt to" if its a local domain?
-            return result(0, reason='bypassing per relayclient')
+        # check greylist
 
-        # check "rcpt to" delivery
+        result_grey = check_greylist(
+            remoteip=remoteip,
+            smtphelo=smtphelo,
+            mailfrom=mailfrom,
+            rcptto=rcptto,
+            grey=grey,
+            greydb=greydb,
+            greymsg=greymsg,
+            relayclient=relayclient
+        )
 
-        # NOTE -- this is currently handled by realrcptto patch in my
-        # envirionment
+        results['grey'] = result_grey
 
-        # TODO -- use cvm-qmail? or otherwise replace realrcptto patch?
+        # check rbl
+
+        result_rbl = check_rbl(
+            remoteip=remoteip,
+            rblsmtpd=rblsmtpd,
+            relayclient=relayclient
+        )
+
+        results['rbl'] = result_rbl
 
         # check spf
 
-        h = smtphelo or tcpremotehost
+        result_spf = check_spf(
+            remoteip=remoteip,
+            remotehost=remotehost,
+            smtphelo=smtphelo,
+            mailfrom=mailfrom,
+            relayclient=relayclient,
+            spfpass=spfpass
+        )
 
-        spfstatus, spfmessage = spf.check2(i=remoteip, s=mailfrom, h=h)
+        results['spf'] = result_spf
 
-        # ... spfstatus is 'pass', 'fail', 'neutral', 'softfail', 'permerror',
-        # 'temperror'.
+        # check rcptto
 
-        # ... for now, ignore softfail but fail with a temporary error for
-        # hard spf failure ... so perhaps the message will be retried after
-        # the sender fixes the issue --- TODO eventually change this to
-        # HARDFAIL
+        # TODO -- disabled since this is a noop
+        #result_rcptto = check_rcptto()
+        #results['rcptto'] = result_rcptto
 
-        if spfstatus != 'pass' and spfpass is not None:
-            result(0, spfstatus=spfstatus, spfmessage=spfmessage,
-                   spfpass='passing because spfpass is set')
-            # FALLTHROUGH
-        elif spfstatus == 'fail':
-            return result(SOFTERROR, spfstatus=spfstatus,
-                          spfmessage=spfmessage)
-            # NOTREACHED
-        else:
-            result(0, spfstatus=spfstatus, spfmessage=spfmessage)
-            # FALLTHROUGH
-
-        # greylisting
-
-        # TODO -- implement greylisting?  replace qmail-greyd?
-
-        return 0
+        return results_to_done(results)
     except Exception as e:
-        return result(SOFTERROR, exception=str(e))
+        return done(SOFTFAIL, exception=str(e))
 
 if __name__ == '__main__':
     sys.exit(main())
