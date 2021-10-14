@@ -1553,14 +1553,14 @@ load qmail-smtpd.o realrcptto.o rcpthosts.o commands.o timeoutread.o \
 timeoutwrite.o ip.o ipme.o ipalloc.o control.o constmap.o received.o \
 date822fmt.o now.o qmail.o cdb.a fd.a wait.a datetime.a getln.a \
 open.a sig.a case.a env.a stralloc.a alloc.a substdio.a error.a str.a \
-fs.a auto_qmail.o auto_break.o auto_usera.o base64.o socket.lib
+fs.a auto_qmail.o auto_break.o auto_usera.o base64.o slurpclose.o socket.lib
 	./load qmail-smtpd realrcptto.o rcpthosts.o commands.o timeoutread.o \
 	timeoutwrite.o ip.o ipme.o ipalloc.o control.o constmap.o \
 	tls.o ssl_timeoutio.o ndelay.a -L/usr/local/ssl/lib -lssl -lcrypto \
 	received.o date822fmt.o now.o qmail.o cdb.a fd.a wait.a \
 	datetime.a getln.a open.a sig.a case.a env.a stralloc.a \
 	alloc.a substdio.a error.a str.a fs.a auto_qmail.o auto_break.o \
-	auto_usera.o base64.o `cat socket.lib`
+	auto_usera.o base64.o slurpclose.o `cat socket.lib`
 
 qmail-smtpd.0: \
 qmail-smtpd.8

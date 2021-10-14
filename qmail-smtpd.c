@@ -22,6 +22,7 @@
 #include "fork.h"
 #include "wait.h"
 #include "rcpthosts.h"
+#include "slurpclose.h"
 #include "timeoutread.h"
 #include "timeoutwrite.h"
 #include "commands.h"
@@ -70,6 +71,7 @@ void die_read() { _exit(1); }
 void die_alarm() { out("451 timeout (#4.4.2)\r\n"); flush(); _exit(1); }
 void die_nomem() { out("421 out of memory (#4.3.0)\r\n"); flush(); _exit(1); }
 void die_tempfail() { out("421 temporary envelope failure (#4.3.0)\r\n"); flush(); _exit(1); }
+void die_tempfail_msg(const char *s) { out("421 temporary envelope failure: "); out(s); out(" (#4.3.0)\r\n"); flush(); _exit(1); }
 void die_fork() { out("421 Unable to fork (#4.3.0)\r\n"); flush(); _exit(1); }
 void die_exec() { out("421 Unable to exec (#4.3.0)\r\n"); flush(); _exit(1); }
 void die_childcrashed() { out("421 Aack, child crashed. (#4.3.0)\r\n"); flush(); _exit(1); }
@@ -77,10 +79,12 @@ void die_control() { out("421 unable to read controls (#4.3.0)\r\n"); flush(); _
 void die_ipme() { out("421 unable to figure out my IP addresses (#4.3.0)\r\n"); flush(); _exit(1); }
 void die_cdb() { out("421 unable to read cdb user database (#4.3.0)\r\n"); flush(); _exit(1); }
 void die_sys() { out("421 unable to read system user database (#4.3.0)\r\n"); flush(); _exit(1); }
+void die_check() { out("421 unable to create pipe (#4.3.0)\r\n"); flush(); _exit(1); }
 void straynewline() { out("451 See http://pobox.com/~djb/docs/smtplf.html.\r\n"); flush(); _exit(1); }
 
 void err_size() { out("552 sorry, that message size exceeds my databytes limit (#5.3.4)\r\n"); }
 void err_permfail() { out("553 permanent envelope failure (#5.7.1)\r\n"); flush(); _exit(1); }
+void err_permfail_msg(const char *s) { out("553 permanent envelope failure: "); out(s); out(" (#5.7.1)\r\n"); flush(); _exit(1); }
 void err_bmf() { out("553 sorry, your envelope sender is in my badmailfrom list (#5.7.1)\r\n"); }
 #ifndef TLS
 void err_nogateway() { out("553 sorry, that domain isn't in my list of allowed rcpthosts (#5.7.1)\r\n"); }
@@ -371,24 +375,42 @@ void mailfrom_parms(arg) char *arg;
 
 void checkenv()
 {
+  int pi[2];
   int child;
   int wstat;
+  stralloc chkmsg = {0};
   char *checkenvarg[] = { "bin/qmail-checkenv", mailfrom.s, addr.s, 0 };
 
+  if (pipe(pi) == -1) die_check();
   switch(child = fork())
   {
     case -1:
       die_fork();
     case 0:
+      close(pi[0]);
+      if(dup2(pi[1], 3) == -1) die_check();
+      sig_pipedefault();
       execv(*checkenvarg,checkenvarg);
       die_exec();
+  }
+  close(pi[1]);
+
+  if (!stralloc_ready(&chkmsg,0)) die_nomem();
+  chkmsg.len = 0;
+  if (pi[0] != -1 && slurpclose(pi[0], &chkmsg, 256) == -1) die_nomem();
+  if (chkmsg.len > 0) {
+    if (!stralloc_0(&chkmsg)) die_nomem();
   }
 
   wait_pid(&wstat,child);
   if (wait_crashed(wstat))
     die_childcrashed();
   if (wait_exitcode(wstat) == 0) return;
-  if (wait_exitcode(wstat) == 100) err_permfail();
+  if (wait_exitcode(wstat) == 100) {
+    if (chkmsg.len > 0) err_permfail_msg(chkmsg.s);
+    err_permfail();
+  }
+  if (chkmsg.len > 0) die_tempfail_msg(chkmsg.s);
   die_tempfail();
 }
 
