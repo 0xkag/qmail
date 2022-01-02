@@ -1,2 +1,14 @@
-#!/bin/sh
-exec /usr/local/bin/setuidgid qmaill /usr/local/bin/multilog t s1000000 n25 /var/log/qmail/smtpds
+#!/bin/bash
+
+set -e
+set -u
+set -o pipefail
+
+exec \
+  env \
+    - \
+    PATH="/var/qmail/bin:$PATH" \
+    setuidgid \
+      qmaill \
+      multilog t s1000000 n25 /var/log/qmail/smtpds
+

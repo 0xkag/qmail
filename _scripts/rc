@@ -1,10 +1,19 @@
-#!/bin/sh
+#!/bin/bash
+
+set -e
+set -u
+set -o pipefail
 
 # Using stdout for logging
-# Using control/defaultdelivery from qmail-local to deliver messages by default
+#
+# Using control/defaultdelivery from qmail-local to deliver messages by
+# default
 
 exec \
-    env - PATH="/var/qmail/bin:$PATH" \
-    /usr/bin/softlimit -m 10000000 \
-    qmail-start "$(cat /var/qmail/control/defaultdelivery)"
+  env \
+    - \
+    PATH="/var/qmail/bin:$PATH" \
+    softlimit \
+      -m 25000000 \
+      qmail-start "$(cat /var/qmail/control/defaultdelivery)"
 

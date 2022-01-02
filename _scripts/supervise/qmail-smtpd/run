@@ -1,16 +1,17 @@
 #!/bin/bash
 
-QMAILDUID=`id -u qmaild`
-NOFILESGID=`id -g qmaild`
-MAXSMTPD=`cat /var/qmail/control/concurrencyincoming`
-LOCAL=`head -1 /var/qmail/control/me`
+set -e
+set -u
+set -o pipefail
 
-export SMTPAUTH="${SMTPAUTH:-}"
-export CHECKENV=""
+QMAILDUID=$(id -u qmaild)
+NOFILESGID=$(id -g qmaild)
+MAXSMTPD=$(cat /var/qmail/control/concurrencyincoming || echo 50)
+LOCAL=$(head -1 /var/qmail/control/me)
 
-if [ -z "$QMAILDUID" -o -z "$NOFILESGID" -o -z "$MAXSMTPD" -o -z "$LOCAL" ]; then
-  echo QMAILDUID, NOFILESGID, MAXSMTPD, or LOCAL is unset in
-  echo /var/qmail/supervise/qmail-smtpd/run
+if [ -z "$QMAILDUID" -o -z "$NOFILESGID" -o -z "$MAXSMTPD" -o \
+     -z "$LOCAL" ]; then
+  echo QMAILDUID, NOFILESGID, MAXSMTPD, or LOCAL are unset
   exit 1
 fi
 
@@ -21,19 +22,22 @@ if [ ! -f /var/qmail/control/rcpthosts ]; then
 fi
 
 exec \
-  /usr/bin/softlimit \
-    -m 25000000 \
-    /usr/bin/tcpserver \
-      -v \
-      -R \
-      -l "$LOCAL" \
-      -x /etc/tcp.smtp.cdb \
-      -c "$MAXSMTPD" \
-      -u "$QMAILDUID" \
-      -g "$NOFILESGID" \
-      0 \
-      ${PORT:-smtp} \
-      /var/qmail/bin/qmail-greyd \
-        /usr/bin/rblsmtpd -r zen.spamhaus.org \
-          /var/qmail/bin/qmail-smtpd /usr/bin/cvm-checkpassword cvm-unix true 2>&1
+  env \
+    - \
+    CHECKENV="" \
+    PATH="/var/qmail/bin:$PATH" \
+    SMTPAUTH="${SMTPAUTH:-}" \
+    softlimit \
+      -m 25000000 \
+      tcpserver \
+        -v \
+        -R \
+        -l "$LOCAL" \
+        -x /etc/tcp.smtp.cdb \
+        -c "$MAXSMTPD" \
+        -u "$QMAILDUID" \
+        -g "$NOFILESGID" \
+        0 \
+        ${PORT:-smtp} \
+        /var/qmail/bin/qmail-smtpd cvm-checkpassword cvm-unix true 2>&1
 

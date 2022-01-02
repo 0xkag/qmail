@@ -7,8 +7,8 @@
 PATH=/var/qmail/bin:/bin:/usr/bin:/usr/local/bin:/usr/local/sbin
 export PATH
 
-QMAILDUID=`id -u qmaild`
-NOFILESGID=`id -g qmaild`
+QMAILDUID=$(id -u qmaild)
+NOFILESGID=$(id -g qmaild)
 
 case "$1" in
   start)
@@ -23,12 +23,19 @@ case "$1" in
     else
       echo "qmail-smtpd supervise not running"
     fi
+    if svok /service/qmail-smtpds ; then
+      svc -u /service/qmail-smtpds /service/qmail-smtpds/log
+    else
+      echo "qmail-smtpds supervise not running"
+    fi
     if [ -d /var/lock/subsys ]; then
       touch /var/lock/subsys/qmail
     fi
     ;;
   stop)
     echo "Stopping qmail..."
+    echo "  qmail-smtpds"
+    svc -d /service/qmail-smtpds /service/qmail-smtpds/log
     echo "  qmail-smtpd"
     svc -d /service/qmail-smtpd /service/qmail-smtpd/log
     echo "  qmail-send"
@@ -42,6 +49,8 @@ case "$1" in
     svstat /service/qmail-send/log
     svstat /service/qmail-smtpd
     svstat /service/qmail-smtpd/log
+    svstat /service/qmail-smtpds
+    svstat /service/qmail-smtpds/log
     qmail-qstat
     ;;
   doqueue|alrm|flush)
@@ -62,21 +71,29 @@ case "$1" in
     svc -p /service/qmail-send
     echo "Pausing qmail-smtpd"
     svc -p /service/qmail-smtpd
+    echo "Pausing qmail-smtpds"
+    svc -p /service/qmail-smtpds
     ;;
   cont)
     echo "Continuing qmail-send"
     svc -c /service/qmail-send
     echo "Continuing qmail-smtpd"
     svc -c /service/qmail-smtpd
+    echo "Continuing qmail-smtpds"
+    svc -c /service/qmail-smtpds
     ;;
   restart)
     echo "Restarting qmail:"
     echo "* Stopping qmail-smtpd."
     svc -d /service/qmail-smtpd /service/qmail-smtpd/log
+    echo "* Stopping qmail-smtpds."
+    svc -d /service/qmail-smtpds /service/qmail-smtpds/log
     echo "* Sending qmail-send SIGTERM and restarting."
     svc -t /service/qmail-send /service/qmail-send/log
     echo "* Restarting qmail-smtpd."
     svc -u /service/qmail-smtpd /service/qmail-smtpd/log
+    echo "* Restarting qmail-smtpds."
+    svc -u /service/qmail-smtpds /service/qmail-smtpds/log
     ;;
   cdb)
     tcprules /etc/tcp.smtp.cdb /etc/tcp.smtp.tmp < /etc/tcp.smtp
