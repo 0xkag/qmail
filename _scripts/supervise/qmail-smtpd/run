@@ -27,12 +27,13 @@ exec \
     CHECKENV="" \
     CVM_CHAIN0=cvm-pwfile \
     CVM_CHAIN1=cvm-unix \
-    CVM_PWFILE_PATH=/dev/null \
+    CVM_PWFILE_PATH=/var/qmail/control/passwd \
     CVM_PWFILE_PWCMP=crypt \
     PATH="/var/qmail/bin:$PATH" \
     SMTPAUTH="${SMTPAUTH:-}" \
+    TLSCIPHERS="HIGH:!aNULL:!eNULL@STRENGTH" \
     softlimit \
-      -m 25000000 \
+      -m 100000000 \
       tcpserver \
         -v \
         -R \
@@ -43,5 +44,6 @@ exec \
         -g "$NOFILESGID" \
         0 \
         ${PORT:-smtp} \
-        /var/qmail/bin/qmail-smtpd cvm-checkpassword cvm-chain true 2>&1
+        /var/qmail/bin/qmail-smtpd \
+          /usr/bin/cvm-checkpassword /usr/bin/cvm-chain true 2>&1
 
