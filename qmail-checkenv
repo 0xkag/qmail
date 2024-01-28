@@ -224,7 +224,7 @@ def check_greylist(remoteip, smtphelo, mailfrom, rcptto, grey, greydb,
                 delete from
                     seen
                 where
-                    timestamp <= (select datetime('now', '-5 minutes'))
+                    timestamp <= (select datetime('now', '-32 days'))
             """
         )
 
@@ -246,7 +246,7 @@ def check_greylist(remoteip, smtphelo, mailfrom, rcptto, grey, greydb,
                             count(remoteip) == 1
                     ) and
                     decision <> 'allow' and
-                    timestamp <= (select datetime('now', '-1 minute'))
+                    timestamp <= (select datetime('now', '-3 days'))
             """
         )
 
@@ -256,7 +256,7 @@ def check_greylist(remoteip, smtphelo, mailfrom, rcptto, grey, greydb,
         return checkresult(
             code=SUCCESS,
             status='pass',
-            message='not subject to greylisting'
+            message='greylisting passed'
         )
     else:
         return checkresult(
@@ -384,6 +384,8 @@ def check_spf(remoteip, remotehost, smtphelo, mailfrom, relayclient,
     # fixes the issue --- TODO eventually change this to HARDFAIL
 
     if spfstatus != 'pass' and spfpass == '':
+        spfmessage = spfmessage or None
+
         result = checkresult(
             code=SUCCESS,
             status='bypassed',
@@ -393,6 +395,8 @@ def check_spf(remoteip, remotehost, smtphelo, mailfrom, relayclient,
             )
         )
     elif spfstatus != 'pass' and relayclient == '':
+        spfmessage = spfmessage or None
+
         result = checkresult(
             code=SUCCESS,
             status='bypassed',
@@ -401,17 +405,16 @@ def check_spf(remoteip, remotehost, smtphelo, mailfrom, relayclient,
                 f'to RELAYCLIENT set and empty'
             )
         )
-    elif spfstatus == 'fail':
+    elif spfstatus in ['fail', 'permerror']:
         result = checkresult(
             code=SOFTFAIL,
             status=spfstatus,
             message=spfmessage
         )
     else:
-        # covers pass, neutral, none ... and also allows permerror, temperror,
-        # softfail
+        # covers pass, neutral, none ... and also allows temperror, softfail
 
-        # TODO stop allowing the latter three?
+        # TODO stop allowing the latter two?
 
         result = checkresult(
             code=SUCCESS,
@@ -525,7 +528,7 @@ def main():
 
         out(
             ('%d mailfrom=%s rcptto=%s smtpauth=%r smtphelo=%s remoteip=%s '
-             'remotehost=%s remoteinfo=%r relayclient=%r rblsmtpd=%r '
+             'remotehost=%s remoteinfo=%r grey=%r relayclient=%r rblsmtpd=%r '
              'spfpass=%r: %s%scode=%s') %
             (
                 os.getppid(),
@@ -536,6 +539,7 @@ def main():
                 remoteip,
                 remotehost,
                 remoteinfo,
+                grey,
                 relayclient,
                 rblsmtpd,
                 spfpass,
