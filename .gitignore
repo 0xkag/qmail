@@ -80,3 +80,5 @@
 /tcp-env
 /uint32.h
 /update_tmprsadh
+!/*.orig
+!/*.rej
