@@ -820,7 +820,7 @@ dnsptr dnsip dnsmxip dnsfq hostname ipmeprint qreceipt qsmhook qbiff \
 forward preline condredirect bouncesaying except maildirmake \
 maildir2mbox maildirwatch qail elq pinq idedit install-big install \
 instcheck home home+df proc proc+df binm1 binm1+df binm2 binm2+df \
-binm3 binm3+df update_tmprsadh
+binm3 binm3+df
 
 load: \
 make-load warn-auto.sh systype
@@ -2186,15 +2186,3 @@ conf-qmail conf-users conf-groups Makefile-cert.mk
 	| sed s}QMAIL}"`head -1 conf-qmail`"}g \
 	> $@
 
-update_tmprsadh: \
-conf-qmail conf-users conf-groups update_tmprsadh.sh
-	@cat update_tmprsadh.sh\
-	| sed s}UGQMAILD}"`head -2 conf-users|tail -1`:`head -1 conf-groups`"}g \
-	| sed s}QMAIL}"`head -1 conf-qmail`"}g \
-	> $@
-	chmod 755 update_tmprsadh 
-
-tmprsadh: \
-update_tmprsadh
-	echo "Creating new temporary RSA and DH parameters"
-	./update_tmprsadh
