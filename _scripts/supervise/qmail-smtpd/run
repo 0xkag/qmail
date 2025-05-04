@@ -31,7 +31,6 @@ exec \
     CVM_PWFILE_PWCMP=crypt \
     PATH="/var/qmail/bin:$PATH" \
     SMTPAUTH="${SMTPAUTH:-}" \
-    TLSCIPHERS="HIGH:!aNULL:!eNULL@STRENGTH" \
     softlimit \
       -m 100000000 \
       tcpserver \
