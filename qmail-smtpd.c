@@ -956,6 +956,188 @@ int tls_verify()
   return relayclient ? 1 : 0;
 }
 
+int tls_proto_info(SSL *ssl, stralloc *proto)
+{
+    const char *tls_version;
+    const SSL_CIPHER *tls_cipher;
+    const char *server_pubkey_type = "unknown";
+    const char *peer_pubkey_type = "unknown";
+    const char *group_name = "unknown";
+    int group_nid = NID_undef;
+
+    if (ssl == NULL) { return; }
+    if ((tls_version = SSL_get_version(ssl)) == NULL) { return; }
+    if ((tls_cipher = SSL_get_current_cipher(ssl)) == NULL) { return; }
+
+    /* kex group, if applicable */
+
+    {
+        group_nid = SSL_get_negotiated_group(ssl);
+
+        if (group_nid != NID_undef) {
+            group_name = OBJ_nid2sn(group_nid);
+            if (group_name == NULL) group_name = "unknown";
+        }
+    }
+
+    /* server cert */
+
+    {
+        X509 *server_cert = NULL;
+        EVP_PKEY *server_pubkey = NULL;
+
+        server_cert = SSL_get_certificate(ssl); /* do not free */
+
+        if (server_cert != NULL) {
+            server_pubkey = X509_get_pubkey(server_cert); /* free */
+
+            if (server_pubkey != NULL) {
+                const char *key_type_name = EVP_PKEY_get0_type_name(server_pubkey);
+
+                if (key_type_name != NULL) {
+                    if (strcmp(key_type_name, "RSA") == 0) {
+                        server_pubkey_type = "RSA";
+                    } else if (strcmp(key_type_name, "EC") == 0) {
+                        server_pubkey_type = "ECDSA";
+                    } else if (strcmp(key_type_name, "ED25519") == 0 ||
+                               strcmp(key_type_name, "ED448") == 0) {
+                        server_pubkey_type = "EdDSA";
+                    }
+                } else {
+                    int base_id = EVP_PKEY_get_base_id(server_pubkey);
+                    if (base_id == EVP_PKEY_RSA) {
+                        server_pubkey_type = "RSA";
+                    } else if (base_id == EVP_PKEY_EC) {
+                        server_pubkey_type = "ECDSA";
+                    } else if (base_id == EVP_PKEY_ED25519 ||
+                               base_id == EVP_PKEY_ED448) {
+                        server_pubkey_type = "EdDSA";
+                    }
+                }
+
+                EVP_PKEY_free(server_pubkey);
+            }
+        }
+    }
+
+    /* mTLS? */
+
+    {
+        X509 *peer_cert = NULL;
+        EVP_PKEY *pubkey = NULL;
+
+        peer_cert = SSL_get_peer_certificate(ssl);
+
+        if (peer_cert != NULL) {
+            pubkey = X509_get_pubkey(peer_cert);
+
+            if (pubkey != NULL) {
+                const char *key_type_name = EVP_PKEY_get0_type_name(pubkey);
+
+                if (key_type_name != NULL) {
+                    if (strcmp(key_type_name, "RSA") == 0)
+                        peer_pubkey_type = "RSA";
+                    else if (strcmp(key_type_name, "EC") == 0)
+                        peer_pubkey_type = "ECDSA";
+                    else if (strcmp(key_type_name, "ED25519") == 0 ||
+                             strcmp(key_type_name, "ED448") == 0)
+                        peer_pubkey_type = "EdDSA";
+                } else {
+                    int base_id = EVP_PKEY_get_base_id(pubkey);
+                    if (base_id == EVP_PKEY_RSA)
+                        peer_pubkey_type = "RSA";
+                    else if (base_id == EVP_PKEY_EC)
+                        peer_pubkey_type = "ECDSA";
+                    else if (base_id == EVP_PKEY_ED25519 ||
+                             base_id == EVP_PKEY_ED448)
+                        peer_pubkey_type = "EdDSA";
+                }
+
+                EVP_PKEY_free(pubkey);
+            } else {
+                peer_pubkey_type = "error";
+            }
+
+            X509_free(peer_cert);
+        } else {
+            peer_pubkey_type = "none";
+        }
+    }
+
+    /* Determine Kx and Au based on TLS Version */
+
+    if (strcmp(tls_version, "TLSv1.3") == 0) {
+        /* TLS 1.3 */
+
+        /* TLS 1.3 kex (group based) */
+
+        const char *kex_mechanism_13 = "unknown";
+
+        if (group_nid != NID_undef) {
+            /* Map NID to Kx mechanism */
+
+             if (group_nid == NID_ffdhe2048 ||
+                 group_nid == NID_ffdhe3072 ||
+                 group_nid == NID_ffdhe4096 ||
+                 group_nid == NID_ffdhe6144 ||
+                 group_nid == NID_ffdhe8192) {
+                 kex_mechanism_13 = "DHE";
+             } else {
+                 kex_mechanism_13 = "ECDHE";
+             }
+        }
+
+        if (!stralloc_cats(proto, "kex ")) return 0;
+        if (!stralloc_cats(proto, kex_mechanism_13)) return 0;
+        if (!stralloc_cats(proto, " group ")) return 0;
+        if (!stralloc_cats(proto, group_name)) return 0;
+        if (!stralloc_cats(proto, " auth ")) return 0;
+        if (!stralloc_cats(proto, server_pubkey_type)) return 0;
+        if (!stralloc_cats(proto, " peer ")) return 0;
+        if (!stralloc_cats(proto, peer_pubkey_type)) return 0;
+    } else if (strcmp(tls_version, "TLSv1.1") == 0 ||
+               strcmp(tls_version, "TLSv1.2") == 0) {
+        /* TLS 1.(1|2) */
+
+        int kex_nid = SSL_CIPHER_get_kx_nid(tls_cipher);
+        int auth_nid = SSL_CIPHER_get_auth_nid(tls_cipher);
+        const char *kex_name = OBJ_nid2sn(kex_nid);
+        const char *auth_name = OBJ_nid2sn(auth_nid);
+
+        if (kex_name == NULL) kex_name = "unknown";
+        if (auth_name == NULL) auth_name = "unknown";
+
+        const char *kex_mechanism_12 = "unknown";
+        const char *auth_mechanism_12 = "unknown";
+
+        /* Map common NID short names to user-friendly Kx/Au terms */
+
+        if (kex_nid == NID_kx_rsa) kex_mechanism_12 = "RSA";
+        else if (kex_nid == NID_kx_dhe) kex_mechanism_12 = "DHE";
+        else if (kex_nid == NID_kx_ecdhe) kex_mechanism_12 = "ECDHE";
+
+        if (auth_nid == NID_auth_rsa) auth_mechanism_12 = "RSA";
+        else if (auth_nid == NID_auth_ecdsa) auth_mechanism_12 = "ECDSA";
+        else if (auth_nid == NID_auth_psk) auth_mechanism_12 = "PSK";
+        else if (auth_nid == NID_auth_null) auth_mechanism_12 = "none";
+
+        /* server_pubkey_type is a synonym for auth_mechanism_12 also */
+
+        if (!stralloc_cats(proto, "kex ")) return 0;
+        if (!stralloc_cats(proto, kex_mechanism_12)) return 0;
+        if (!stralloc_cats(proto, " group ")) return 0;
+        if (!stralloc_cats(proto, group_name)) return 0;
+        if (!stralloc_cats(proto, " auth ")) return 0;
+        if (!stralloc_cats(proto, auth_mechanism_12)) return 0;
+        if (!stralloc_cats(proto, " peer ")) return 0;
+        if (!stralloc_cats(proto, peer_pubkey_type)) return 0;
+    }
+
+    /* pre-TLS 1.1 is not handled at all */
+
+    return 1;
+}
+
 void tls_init()
 {
   SSL *myssl;
@@ -975,6 +1157,10 @@ void tls_init()
 
   /* renegotiation should include certificate request */
   SSL_CTX_set_options(ctx, SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
+
+  /* required to test TLSv1.0 and TLSv1.1 on modern OpenSSL */
+  //SSL_CTX_set_min_proto_version(ctx, TLS1_VERSION);
+  //SSL_CTX_set_security_level(ctx, 0);
 
   /* server picks cipher based on its ordering not client's */
   SSL_CTX_set_options(ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
@@ -1050,8 +1236,14 @@ void tls_init()
 
   /* populate the protocol string, used in Received */
   if (!stralloc_copys(&proto, "ESMTPS (")
+    || !stralloc_cats(&proto, SSL_get_version(ssl))
+    || !stralloc_cats(&proto, " encrypted; suite ")
     || !stralloc_cats(&proto, SSL_get_cipher(ssl))
-    || !stralloc_cats(&proto, " encrypted)")) die_nomem();
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    || !stralloc_cats(&proto, " ")
+    || !tls_proto_info(ssl, &proto)
+#endif
+    || !stralloc_cats(&proto, ")")) die_nomem();
   if (!stralloc_0(&proto)) die_nomem();
   protocol = proto.s;
 
