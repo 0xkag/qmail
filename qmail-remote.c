@@ -437,8 +437,12 @@ int tls_init()
   /* let the other side complain if it needs a cert and we don't have one */
 # define CLIENTCERT "control/clientcert.pem"
   if (SSL_CTX_use_certificate_chain_file(ctx, CLIENTCERT))
-    SSL_CTX_use_RSAPrivateKey_file(ctx, CLIENTCERT, SSL_FILETYPE_PEM);
+    SSL_CTX_use_PrivateKey_file(ctx, CLIENTCERT, SSL_FILETYPE_PEM);
 # undef CLIENTCERT
+# define CLIENTCERT2 "control/clientcert2.pem"
+  if (SSL_CTX_use_certificate_chain_file(ctx, CLIENTCERT2))
+    SSL_CTX_use_PrivateKey_file(ctx, CLIENTCERT2, SSL_FILETYPE_PEM);
+# undef CLIENTCERT2
 
 #if OPENSSL_VERSION_NUMBER >= 0x10101000L
   SSL_CTX_set_post_handshake_auth(ctx, 1);

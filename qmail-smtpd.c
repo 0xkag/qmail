@@ -873,6 +873,7 @@ void tls_err(const char *s) { tls_out(s, ssl_error()); if (smtps) die_read(); }
 # define CLIENTCA "control/clientca.pem"
 # define CLIENTCRL "control/clientcrl.pem"
 # define SERVERCERT "control/servercert.pem"
+# define SERVERCERT2 "control/servercert2.pem"
 
 int tls_verify()
 {
@@ -963,6 +964,7 @@ void tls_init()
   stralloc saciphers = {0};
   X509_STORE *store;
   X509_LOOKUP *lookup;
+  int servercert2 = 0;
   int session_id_context = 1; /* anything will do */
 
   OPENSSL_init_ssl(OPENSSL_INIT_LOAD_SSL_STRINGS, NULL);
@@ -973,6 +975,9 @@ void tls_init()
 
   /* renegotiation should include certificate request */
   SSL_CTX_set_options(ctx, SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
+
+  /* server picks cipher based on its ordering not client's */
+  SSL_CTX_set_options(ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
 
   /* never bother the application with retries if the transport is blocking */
   SSL_CTX_set_mode(ctx, SSL_MODE_AUTO_RETRY);
@@ -985,6 +990,10 @@ void tls_init()
 
   if (!SSL_CTX_use_certificate_chain_file(ctx, SERVERCERT))
     { SSL_CTX_free(ctx); tls_err("missing certificate"); return; }
+  if (!SSL_CTX_use_certificate_chain_file(ctx, SERVERCERT2))
+    { /* missing optional second server cert; continuing */ }
+  else
+    { servercert2 = 1; }
   SSL_CTX_load_verify_locations(ctx, CLIENTCA, NULL);
 
   /* crl checking */
@@ -1004,8 +1013,10 @@ void tls_init()
   if (!myssl) { tls_err("unable to initialize ssl"); return; }
 
   /* this will also check whether public and private keys match */
-  if (!SSL_use_RSAPrivateKey_file(myssl, SERVERCERT, SSL_FILETYPE_PEM))
-    { SSL_free(myssl); tls_err("no valid RSA private key"); return; }
+  if (!SSL_use_PrivateKey_file(myssl, SERVERCERT, SSL_FILETYPE_PEM))
+    { SSL_free(myssl); tls_err("no valid private key"); return; }
+  if (servercert2 && !SSL_use_PrivateKey_file(myssl, SERVERCERT2, SSL_FILETYPE_PEM))
+    { SSL_free(myssl); tls_err("no valid private key"); return; }
 
   ciphers = env_get("TLSCIPHERS");
   if (!ciphers) {
@@ -1024,7 +1035,6 @@ void tls_init()
   /* TLSv1.3 and above*/
   SSL_set_ciphersuites(myssl, ciphers);
   alloc_free(saciphers.s);
-
 
   SSL_set_rfd(myssl, ssl_rfd = substdio_fileno(&ssin));
   SSL_set_wfd(myssl, ssl_wfd = substdio_fileno(&ssout));
