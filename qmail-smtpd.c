@@ -965,9 +965,9 @@ int tls_proto_info(SSL *ssl, stralloc *proto)
     const char *group_name = "unknown";
     int group_nid = NID_undef;
 
-    if (ssl == NULL) { return; }
-    if ((tls_version = SSL_get_version(ssl)) == NULL) { return; }
-    if ((tls_cipher = SSL_get_current_cipher(ssl)) == NULL) { return; }
+    if (ssl == NULL) { return 1; }
+    if ((tls_version = SSL_get_version(ssl)) == NULL) { return 1; }
+    if ((tls_cipher = SSL_get_current_cipher(ssl)) == NULL) { return 1; }
 
     /* kex group, if applicable */
 
@@ -1087,7 +1087,7 @@ int tls_proto_info(SSL *ssl, stralloc *proto)
              }
         }
 
-        if (!stralloc_cats(proto, "kex ")) return 0;
+        if (!stralloc_cats(proto, "\n  kex ")) return 0;
         if (!stralloc_cats(proto, kex_mechanism_13)) return 0;
         if (!stralloc_cats(proto, " group ")) return 0;
         if (!stralloc_cats(proto, group_name)) return 0;
@@ -1123,7 +1123,7 @@ int tls_proto_info(SSL *ssl, stralloc *proto)
 
         /* server_pubkey_type is a synonym for auth_mechanism_12 also */
 
-        if (!stralloc_cats(proto, "kex ")) return 0;
+        if (!stralloc_cats(proto, "\n  kex ")) return 0;
         if (!stralloc_cats(proto, kex_mechanism_12)) return 0;
         if (!stralloc_cats(proto, " group ")) return 0;
         if (!stralloc_cats(proto, group_name)) return 0;
