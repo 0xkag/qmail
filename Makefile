@@ -811,7 +811,7 @@ ipalloc.h ip.h gen_alloc.h exit.h
 
 it: \
 qmail-local qmail-lspawn qmail-getpw qmail-remote qmail-rspawn \
-qmail-clean qmail-send qmail-start splogger qmail-queue qmail-inject \
+qmail-checkpassword qmail-clean qmail-send qmail-start splogger qmail-queue qmail-inject \
 predate datemail mailsubj qmail-upq qmail-showctl qmail-newu \
 qmail-pw2u qmail-qread qmail-qstat qmail-tcpto qmail-tcpok \
 qmail-pop3d qmail-popup qmail-qmqpc qmail-qmqpd qmail-qmtpd \
@@ -1085,6 +1085,31 @@ qbiff.o: \
 compile qbiff.c readwrite.h stralloc.h gen_alloc.h substdio.h subfd.h \
 substdio.h open.h byte.h str.h headerbody.h hfield.h env.h exit.h
 	./compile qbiff.c
+
+qmail-checkpassword: \
+load qmail-checkpassword.o auto_qmail.o strerr.a getln.a open.a \
+stralloc.a alloc.a substdio.a error.a case.a str.a
+	./load qmail-checkpassword auto_qmail.o strerr.a getln.a open.a \
+	stralloc.a alloc.a substdio.a error.a case.a str.a -lcrypt
+
+qmail-checkpassword-t: \
+load qmail-checkpassword-t.o qmail-checkpassword.o strerr.a getln.a \
+open.a stralloc.a alloc.a substdio.a error.a case.a str.a
+	./load qmail-checkpassword-t qmail-checkpassword.o strerr.a getln.a \
+	open.a stralloc.a alloc.a substdio.a error.a case.a str.a -lcrypt
+
+qmail-checkpassword-t.c: \
+auto-str
+	./auto-str auto_qmail . > qmail-checkpassword-t.c
+
+qmail-checkpassword-t.o: \
+compile qmail-checkpassword-t.c
+	./compile qmail-checkpassword-t.c
+
+qmail-checkpassword.o: \
+compile qmail-checkpassword.c substdio.h stralloc.h gen_alloc.h \
+getln.h open.h strerr.h error.h case.h byte.h str.h auto_qmail.h
+	./compile qmail-checkpassword.c
 
 qmail-clean: \
 load qmail-clean.o fmtqfn.o now.o getln.a sig.a stralloc.a alloc.a \
@@ -2086,6 +2111,10 @@ trysyslog.c compile load
 systype: \
 find-systype trycpp.c
 	./find-systype > systype
+
+test-checkpassword: \
+qmail-checkpassword-t test-checkpassword.sh
+	sh test-checkpassword.sh "`pwd`/qmail-checkpassword-t"
 
 tcp-env: \
 load tcp-env.o dns.o remoteinfo.o timeoutread.o timeoutwrite.o \

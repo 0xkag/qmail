@@ -71,6 +71,7 @@
 !/qmail-*.h
 !/qmail-checkenv
 !/qmail-greyd
+/qmail-checkpassword-t.c
 /qreceipt
 /qsmhook
 /select.h

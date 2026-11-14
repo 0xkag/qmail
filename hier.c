@@ -131,6 +131,7 @@ void hier()
   c(auto_qmail,"bin","qmail-qmqpd",auto_uido,auto_gidq,0755);
   c(auto_qmail,"bin","qmail-qmtpd",auto_uido,auto_gidq,0755);
   c(auto_qmail,"bin","qmail-smtpd",auto_uido,auto_gidq,0755);
+  c(auto_qmail,"bin","qmail-checkpassword",auto_uido,auto_gidq,0755);
   c(auto_qmail,"bin","sendmail",auto_uido,auto_gidq,0755);
   c(auto_qmail,"bin","tcp-env",auto_uido,auto_gidq,0755);
   c(auto_qmail,"bin","qreceipt",auto_uido,auto_gidq,0755);
