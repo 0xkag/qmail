@@ -25,8 +25,6 @@ exec \
   env \
     - \
     CHECKENV="" \
-    CVM_CHAIN0=cvm-pwfile \
-    CVM_CHAIN1=cvm-unix \
     CVM_PWFILE_PATH=/var/qmail/control/passwd \
     CVM_PWFILE_PWCMP=crypt \
     PATH="/var/qmail/bin:$PATH" \
@@ -44,5 +42,5 @@ exec \
         0 \
         ${PORT:-smtp} \
         /var/qmail/bin/qmail-smtpd \
-          /usr/bin/cvm-checkpassword /usr/bin/cvm-chain true 2>&1
+          /usr/bin/cvm-checkpassword /usr/bin/cvm-pwfile true 2>&1
 
