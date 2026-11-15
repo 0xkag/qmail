@@ -975,7 +975,8 @@ int tls_proto_info(SSL *ssl, stralloc *proto)
         group_nid = SSL_get_negotiated_group(ssl);
 
         if (group_nid != NID_undef) {
-            group_name = OBJ_nid2sn(group_nid);
+            /* knows groups without a NID, e.g. X25519MLKEM768 */
+            group_name = SSL_group_to_name(ssl, group_nid);
             if (group_name == NULL) group_name = "unknown";
         }
     }

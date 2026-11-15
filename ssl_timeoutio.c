@@ -4,6 +4,7 @@
 #include "ndelay.h"
 #include "now.h"
 #include "ssl_timeoutio.h"
+#include <openssl/err.h>
 
 int ssl_timeoutio(int (*fun)(),
   int t, int rfd, int wfd, SSL *ssl, char *buf, int len)
@@ -15,6 +16,9 @@ int ssl_timeoutio(int (*fun)(),
     fd_set fds;
     struct timeval tv;
 
+    /* SSL_get_error() needs an empty error queue to tell a retry from a
+       failure; earlier calls can leave errors on it */
+    ERR_clear_error();
     const int r = buf ? fun(ssl, buf, len) : fun(ssl);
     if (r > 0) return r;
 
