@@ -33,7 +33,7 @@ the mail from:<> arg, argv[2] is the rcpt to:<> arg.
 """
 
 from collections import namedtuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import io
 import os
 import sqlite3
@@ -116,9 +116,16 @@ def check_greylist(remoteip, smtphelo, mailfrom, rcptto, grey, greydb,
     else:
         greymsg = ''
 
-    now = datetime.utcnow()
+    # naive UTC, like sqlite's current_timestamp
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # db
+
+    # explicit, as Python 3.12 deprecated sqlite3's default converter
+    sqlite3.register_converter(
+        'timestamp',
+        lambda b: datetime.fromisoformat(b.decode())
+    )
 
     con = sqlite3.connect(
         greydb,
